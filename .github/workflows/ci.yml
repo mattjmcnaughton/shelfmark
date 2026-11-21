@@ -21,6 +21,20 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev --frozen
 
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: src/shelfmark/web/frontend
+
       - name: Install just
         run: sudo apt-get update && sudo apt-get install -y just
 

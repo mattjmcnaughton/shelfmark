@@ -1,6 +1,8 @@
 # shelfmark
 
-A keyboard-first personal reading desk
+A keyboard-first personal reading desk: RSS/Atom subscriptions with a triage Inbox,
+a deliberate Saved queue, clean article extraction, on-demand YouTube embeds, tags,
+archive/restore, and a three-pane desk driven by the keyboard (`?` lists the keys).
 
 ## Getting Started
 
@@ -19,7 +21,7 @@ A keyboard-first personal reading desk
 uv sync --dev
 cp .env.example .env
 
-# Frontend (after scaffolding with frontend-react template)
+# Frontend
 cd src/shelfmark/web/frontend && pnpm install
 ```
 
@@ -68,19 +70,25 @@ just test-all
 just gate
 ```
 
-## Deployment
+`.env.example` runs locally as one development user (`SHELFMARK_AUTH=local`), with data
+in `.data/`.
+
+## Deployment (Amp Box)
+
+`.amp/box.yaml` builds a self-contained release (`scripts/box-build.sh`: relocatable
+CPython, dependencies, built frontend) and runs `python -m shelfmark` on `$PORT`. The
+SQLite database is `$AMP_DEPLOYMENT_DATA_DIRECTORY/shelfmark.sqlite3`, which survives
+redeploys; migrations run on startup.
 
 ```sh
-# Build Docker image
-docker build -t shelfmark .
-
-# Run container
-docker run -p 8000:8000 shelfmark
+amp boxes deploy --on <namespace>/<box> --name shelfmark
 ```
 
-## Frontend
-
-The frontend lives in `src/shelfmark/web/frontend/`. Scaffold it using the `frontend-react` Copier template. See `src/shelfmark/web/frontend/README.md` for details.
+Then register Sign in with Amp with redirect URI `<deployment url>/auth/callback` and
+store `AMP_OAUTH_CLIENT_ID`, `AMP_OAUTH_CLIENT_SECRET`, and `APP_SESSION_SECRET`
+(32+ random characters) on the deployment, optionally `SHELFMARK_ALLOWED_USER_IDS`,
+and redeploy. Until then the app serves health checks and the desk shell, and `/api/*`
+answers 503.
 
 ## Architecture
 

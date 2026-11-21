@@ -46,6 +46,36 @@ DTOs (Pydantic models) are used at the router and controller level for API I/O. 
 
 The frontend is scaffolded separately into `src/shelfmark/web/frontend/` using the `frontend-react` Copier template. In development, the frontend dev server runs independently with API proxying. In production, built static files are served by FastAPI via `web/serve.py`.
 
+## Shelfmark design
+
+- **Composition root.** `app.build_app` reads `Settings` and builds the real
+  collaborators (`Database`, `PublicWebFetcher`, the auth provider) and passes them to
+  `create_app`. Nothing below it reads global settings; tests call `create_app` with a
+  temporary SQLite file, `tests/fakes.FakeFetcher`, a `FakeClock`, and `LocalAuth` or
+  `AmpAuth` backed by a fake Amp IdP.
+- **Domain.** `services/library.LibraryService` owns triage: the feed Inbox
+  (unsaved, unarchived), the deliberate Saved queue, Archive/restore (restore returns a
+  saved item to Saved), tags, saving links (article extraction with link-only fallback,
+  YouTube as one canonical video item), and following/refreshing RSS/Atom feeds.
+  `services/refresher` refreshes all users' feeds every `SHELFMARK_REFRESH_MINUTES`.
+- **Persistence.** `models` (SQLAlchemy 2, portable types, named constraints, UTC
+  timestamps), `repositories/library` (portable Core/ORM queries only), Alembic
+  migrations in `src/shelfmark/migrations` (shipped with the package; applied on
+  startup). Swapping SQLite for Postgres means changing `DATABASE_URL` and adding a
+  driver.
+- **Identity boundary.** `auth.AuthProvider` answers "who is this?" and contributes its
+  own routes. `auth.amp.AmpAuth` implements Sign in with Amp following Amp's reference
+  (PKCE S256, `resource`, RS256 ID token verified against JWKS with nonce/aud/azp/exp,
+  AES-GCM sealed HttpOnly cookies, no tokens stored). `LocalAuth` is allowed only with
+  `SHELFMARK_ENV=development`. Production is the default and fails closed: missing
+  OAuth settings make `/api/*` return 503. `SHELFMARK_ALLOWED_USER_IDS` restricts access.
+- **Untrusted content.** `clients/fetcher.PublicWebFetcher` only fetches http(s) on
+  default ports, rejects IP literals and internal names, resolves once and refuses any
+  non-global address, pins the connection to the checked addresses, re-validates each
+  redirect, and caps size (2 MB) and time (12 s). `services/content` turns HTML into
+  plain-text blocks; the API and the desk never carry or render HTML. A strict CSP
+  allows only the youtube-nocookie player frame.
+
 ## Toolchain
 
 | Tool | Purpose |

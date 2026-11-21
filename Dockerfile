@@ -27,4 +27,5 @@ USER app
 
 EXPOSE 8000
 
-CMD ["uv", "run", "uvicorn", "shelfmark.app:app", "--host", "0.0.0.0", "--port", "8000"]
+ENV SHELFMARK_DATA_DIR=/data
+CMD ["uv", "run", "--no-dev", "python", "-m", "shelfmark"]

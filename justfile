@@ -98,7 +98,15 @@ gate-external: gate-expensive test-external
 
 # Start backend dev server
 dev-be:
-    uv run uvicorn shelfmark.app:app --reload
+    SHELFMARK_ENV=development SHELFMARK_AUTH=local SHELFMARK_DATA_DIR=.data uv run uvicorn shelfmark.app:build_app --factory --reload
+
+# Apply database migrations (uses DATABASE_URL or SHELFMARK_DATA_DIR)
+migrate:
+    uv run alembic upgrade head
+
+# Build the self-contained Box release in place (used by .amp/box.yaml)
+box-build:
+    bash scripts/box-build.sh
 
 # Start frontend dev server
 dev-fe:

@@ -1,7 +1,5 @@
 :root {
-  font:
-    14px/1.45 system-ui,
-    sans-serif;
+  font: 14px / 1.45 system-ui, sans-serif;
   color: #202e3f;
   background: #fdfefe;
   --nav: #172b3d;
@@ -39,9 +37,7 @@ article:focus-visible {
   outline-offset: -3px;
 }
 kbd {
-  font:
-    11px ui-monospace,
-    monospace;
+  font: 11px ui-monospace, monospace;
   border: 1px solid currentColor;
   border-radius: 4px;
   padding: 1px 5px;
@@ -76,9 +72,7 @@ nav {
   display: flex;
   align-items: center;
   gap: 9px;
-  font:
-    600 30px Georgia,
-    serif;
+  font: 600 30px Georgia, serif;
   letter-spacing: -1.6px;
 }
 .brand svg {
@@ -150,12 +144,10 @@ footer svg,
 }
 .navrow small {
   color: #d2e3ef;
-  font:
-    12px ui-monospace,
-    monospace;
+  font: 12px ui-monospace, monospace;
 }
 .stamp {
-  font: italic bold 14px Georgia;
+  font: italic bold 14px Georgia, serif;
   display: grid;
   place-items: center;
   width: 18px;
@@ -201,6 +193,55 @@ footer {
 }
 .light {
   background: #92c9bc;
+}
+.navfoot .who {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.navfoot form {
+  margin-left: auto;
+  margin-right: 6px;
+}
+.signout {
+  min-height: 26px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  color: #d2e3ef;
+  font-size: 12px;
+}
+.signout:hover {
+  background: #28445d;
+}
+.gate {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--nav);
+  color: #f5faff;
+}
+.gatecard {
+  width: min(100%, 360px);
+}
+.gate .primary {
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 0;
+  text-decoration: none;
+}
+.gatedetail {
+  margin: 29px 0 14px;
+  padding: 0 9px;
+  color: #d2e3ef;
+}
+.gate form {
+  padding: 0 9px;
+}
+.gate .signout {
+  border: 1px solid #40617a;
 }
 .queue {
   background: var(--soft);
@@ -344,9 +385,7 @@ footer button,
   text-wrap: balance;
 }
 .deck {
-  font:
-    italic clamp(18px, 1.55vw, 23px)/1.4 Georgia,
-    serif;
+  font: italic clamp(18px, 1.55vw, 23px) / 1.4 Georgia, serif;
   color: var(--muted);
 }
 .by {
@@ -378,9 +417,7 @@ footer button,
   font-size: 12px;
 }
 .prose {
-  font:
-    18px/1.65 Georgia,
-    serif;
+  font: 18px / 1.65 Georgia, serif;
 }
 .prose p {
   margin: 0 0 14px;

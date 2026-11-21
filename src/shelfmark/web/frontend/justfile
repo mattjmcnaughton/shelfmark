@@ -1,6 +1,6 @@
 # Check formatting
 fmt:
-    pnpm biome format --check .
+    pnpm biome format .
 
 # Fix formatting
 fmt-fix:
@@ -16,7 +16,7 @@ lint-fix:
 
 # Run type checker
 typecheck:
-    pnpm tsc --noEmit
+    pnpm run typecheck
 
 # Run all tests
 test-all: test-unit test-integration test-e2e

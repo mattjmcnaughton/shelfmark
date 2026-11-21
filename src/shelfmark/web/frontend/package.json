@@ -7,7 +7,13 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && tsc -b",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "fmt": "biome format .",
+    "fmt-fix": "biome format --write .",
+    "lint": "biome lint .",
+    "lint-fix": "biome lint --write .",
+    "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.node.json --noEmit",
+    "test": "vitest run src/"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.75",

@@ -4,11 +4,10 @@ import logging
 
 import structlog
 
-from shelfmark.config import settings
+from shelfmark.config import Settings
 
 
-def configure_logging() -> None:
-    """Configure structlog for the application."""
+def configure_logging(settings: Settings) -> None:
     renderer = (
         structlog.dev.ConsoleRenderer()
         if settings.log_format == "console"
@@ -19,6 +18,7 @@ def configure_logging() -> None:
             structlog.contextvars.merge_contextvars,
             structlog.processors.add_log_level,
             structlog.processors.StackInfoRenderer(),
+            structlog.processors.format_exc_info,
             structlog.processors.TimeStamper(fmt="iso"),
             renderer,
         ],

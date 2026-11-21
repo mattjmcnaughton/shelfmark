@@ -3,8 +3,9 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { RouterProvider, createRouter } from "@tanstack/react-router";
-import { routeTree } from "./routeTree.gen";
+// Tailwind base must load before the desk styles so the desk rules win.
 import "./index.css";
+import { routeTree } from "./routeTree.gen";
 
 const queryClient = new QueryClient();
 const router = createRouter({ routeTree });

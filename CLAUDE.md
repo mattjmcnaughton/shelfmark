@@ -41,9 +41,12 @@ src/shelfmark/
   dtos/                     # Pydantic request/response models
   web/                      # Frontend integration
     serve.py                # Static file serving for production
-    frontend/               # Frontend application (scaffolded separately)
+    frontend/               # Frontend application
   clients/                  # External API/service clients
-  db.py                     # Async engine/session setup
+  __main__.py               # Production entry point (python -m shelfmark)
+  auth/                     # Identity boundary: AuthProvider, LocalAuth, Sign in with Amp
+  db.py                     # Database (engine/sessions) and migrate()
+  migrations/               # Alembic environment and versions
   models/                   # SQLAlchemy models
   repositories/             # Data access layer
 tests/
@@ -61,6 +64,9 @@ tests/
 - Tests are organized by type in `tests/unit/`, `tests/integration/`, `tests/e2e/`.
 - Use `@pytest.mark.external` for tests that hit external services.
 - All config is in `pyproject.toml` — no separate config files.
+- Dependencies are injected through `create_app`; tests use fakes (`tests/fakes.py`), not mocks, and a real migrated SQLite file.
+- Keep schema and queries portable (SQLite now, Postgres later); add schema changes as Alembic revisions.
+- Fetched content is untrusted: fetch only through `PublicWebFetcher`, store and return plain-text blocks, never HTML.
 - Backend: `just dev-be`. Frontend: `just dev-fe`. Both: `just dev`.
 
 ## More Information
