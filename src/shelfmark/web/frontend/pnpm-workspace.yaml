@@ -1,0 +1,6 @@
+allowBuilds:
+  '@biomejs/biome': true
+  esbuild: true
+  msw: false
+minimumReleaseAgeExclude:
+  - lucide-react@1.77.0
