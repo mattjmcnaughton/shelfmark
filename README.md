@@ -1,8 +1,32 @@
-# shelfmark
+# Shelfmark
 
-A keyboard-first personal reading desk: RSS/Atom subscriptions with a triage Inbox,
-a deliberate Saved queue, clean article extraction, on-demand YouTube embeds, tags,
-archive/restore, and a three-pane desk driven by the keyboard (`?` lists the keys).
+Shelfmark puts your "read/watch/try later" in one calm, private queue, so you can
+triage, read, tag, and archive what matters without the noise.
+
+![The Inbox: new entries from your subscriptions, with the selected article open in the reading pane](docs/images/inbox.png)
+
+## What it does
+
+- **Triage an Inbox.** Follow RSS and Atom feeds; new entries land in the Inbox, where
+  each one gets a glance and a decision: save it, set it aside to try, or archive it.
+- **Read in a Saved queue.** Links you save, and entries you keep, go to Saved. Articles
+  are extracted to clean, plain text, and YouTube links play in place on demand.
+- **Keep a To try list.** Tools, repos, skills, and ideas, with or without a link, each
+  with a short note on why it is worth trying.
+- **Tag and archive.** A few tags for finding things again; archive when you are done,
+  and restore anything later.
+- **Keyboard first.** `j`/`k` to move, `s` to save, `e` for To try, `t` to tag, `a` to
+  archive, `f` for a distraction-free focus view, and `?` for the full list.
+- **Private.** One person's library behind its own sign-in, with an allowlist of who
+  may use it.
+
+![The Saved queue, with an extracted article, its tags, and a note](docs/images/saved.png)
+
+![To try: an idea with no link and a note on why to try it](docs/images/try.png)
+
+![Every action has a key; ? shows them](docs/images/keys.png)
+
+The screenshots use invented sample content.
 
 ## Getting Started
 
