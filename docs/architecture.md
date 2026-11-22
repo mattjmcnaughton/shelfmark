@@ -51,7 +51,7 @@ The frontend is scaffolded separately into `src/shelfmark/web/frontend/` using t
 - **Composition root.** `app.build_app` reads `Settings` and builds the real
   collaborators (`Database`, `PublicWebFetcher`, the auth provider) and passes them to
   `create_app`. Nothing below it reads global settings; tests call `create_app` with a
-  temporary SQLite file, `tests/fakes.FakeFetcher`, a `FakeClock`, and `LocalAuth` or
+  fresh migrated database (SQLite, or Postgres in CI), `tests/fakes.FakeFetcher`, a `FakeClock`, and `LocalAuth` or
   `AmpAuth` backed by a fake Amp IdP.
 - **Domain.** `services/library.LibraryService` owns triage: the feed Inbox
   (not saved, not to try, unarchived), the deliberate Saved queue, the To try queue
@@ -62,8 +62,9 @@ The frontend is scaffolded separately into `src/shelfmark/web/frontend/` using t
 - **Persistence.** `models` (SQLAlchemy 2, portable types, named constraints, UTC
   timestamps), `repositories/library` (portable Core/ORM queries only), Alembic
   migrations in `src/shelfmark/migrations` (shipped with the package; applied on
-  startup). Swapping SQLite for Postgres means changing `DATABASE_URL` and adding a
-  driver.
+  startup). SQLite (aiosqlite) is the local default; production uses Neon Postgres
+  through psycopg, selected by `DATABASE_URL`. `SHELFMARK_TEST_DATABASE_URL` runs
+  the database tests against Postgres, as CI does.
 - **Identity boundary.** `auth.AuthProvider` answers "who is this?" and contributes its
   own routes. `auth.amp.AmpAuth` implements Sign in with Amp following Amp's reference
   (PKCE S256, `resource`, RS256 ID token verified against JWKS with nonce/aud/azp/exp,

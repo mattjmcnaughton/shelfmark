@@ -25,7 +25,8 @@ MIGRATIONS = Path(__file__).resolve().parent / "migrations"
 class Database:
     def __init__(self, url: str) -> None:
         self.url = url
-        self.engine: AsyncEngine = create_async_engine(url)
+        # Neon suspends idle compute and drops its connections; check before reuse.
+        self.engine: AsyncEngine = create_async_engine(url, pool_pre_ping=True)
         if self.engine.dialect.name == "sqlite":
             event.listen(self.engine.sync_engine, "connect", _sqlite_pragmas)
         self._sessions = async_sessionmaker(self.engine, expire_on_commit=False)
@@ -48,9 +49,13 @@ def _sqlite_pragmas(dbapi_connection, _record) -> None:
 
 
 def sync_url(url: str) -> str:
-    """The synchronous driver URL Alembic uses for the same database."""
+    """The synchronous driver URL Alembic uses for the same database.
+
+    psycopg serves both the app and Alembic, so ``postgresql+psycopg`` URLs pass
+    through unchanged.
+    """
     parsed = make_url(url)
-    driver = {"sqlite+aiosqlite": "sqlite", "postgresql+asyncpg": "postgresql"}
+    driver = {"sqlite+aiosqlite": "sqlite", "postgresql": "postgresql+psycopg"}
     return parsed.set(
         drivername=driver.get(parsed.drivername, parsed.drivername)
     ).render_as_string(hide_password=False)

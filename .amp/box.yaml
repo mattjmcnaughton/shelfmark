@@ -1,7 +1,8 @@
 # Shelfmark on an Amp Box: `amp boxes deploy --on <namespace>/<box> --name shelfmark`.
 # The build ships a relocatable CPython with dependencies, so the Box needs no Python.
-# Data lives in $AMP_DEPLOYMENT_DATA_DIRECTORY/shelfmark.sqlite3 and survives deploys.
-# Secrets (set per deployment, never here): AMP_OAUTH_CLIENT_ID, AMP_OAUTH_CLIENT_SECRET,
+# Data lives in Neon Postgres (project shelfmark); migrations run on startup.
+# Secrets (set per deployment, never here): DATABASE_URL (postgresql+psycopg://…
+# ?sslmode=verify-full&sslrootcert=/etc/ssl/certs/ca-certificates.crt), AMP_OAUTH_CLIENT_ID, AMP_OAUTH_CLIENT_SECRET,
 # APP_SESSION_SECRET. Optional: SHELFMARK_ALLOWED_USER_IDS. Without them the API fails closed.
 build: bash scripts/box-build.sh
 source: false

@@ -1,4 +1,4 @@
-"""LibraryService against a real SQLite database with a fake fetcher and clock."""
+"""LibraryService against a real database with a fake fetcher and clock."""
 
 import pytest
 

@@ -2,7 +2,6 @@
 
 import time
 from contextlib import asynccontextmanager
-from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
@@ -54,8 +53,7 @@ class FakeAmp:
         return {"keys": [{**jwk, "kid": "k1", "use": "sig", "alg": "RS256"}]}
 
 
-def app_with(tmp_path: Path, auth, allowed: str = ""):
-    url = f"sqlite+aiosqlite:///{tmp_path / 'auth.sqlite3'}"
+def app_with(url: str, auth, allowed: str = ""):
     return create_app(
         Settings(_env_file=None, allowed_user_ids=allowed),
         database=Database(url),
@@ -99,9 +97,9 @@ async def sign_in(c: httpx.AsyncClient, fake: FakeAmp) -> httpx.Response:
     )
 
 
-async def test_sign_in_flow_creates_session(tmp_path):
+async def test_sign_in_flow_creates_session(make_database_url):
     fake = FakeAmp()
-    async with client(app_with(tmp_path, amp(fake))) as c:
+    async with client(app_with(make_database_url(), amp(fake))) as c:
         r = await c.get("/api/library")
         assert r.status_code == 401 and r.json()["sign_in_url"] == "/auth/signin"
         done = await sign_in(c, fake)
@@ -117,9 +115,9 @@ async def test_sign_in_flow_creates_session(tmp_path):
         assert (await c.get("/api/library")).status_code == 401
 
 
-async def test_rejects_forged_state_and_bad_tokens(tmp_path):
+async def test_rejects_forged_state_and_bad_tokens(make_database_url):
     fake = FakeAmp()
-    async with client(app_with(tmp_path, amp(fake))) as c:
+    async with client(app_with(make_database_url(), amp(fake))) as c:
         r = await c.get("/auth/callback", params={"code": "abc", "state": "forged"})
         assert r.headers["location"] == "/?auth_error=invalid_state"
 
@@ -129,7 +127,7 @@ async def test_rejects_forged_state_and_bad_tokens(tmp_path):
         assert (await c.get("/api/library")).status_code == 401
 
     fake = FakeAmp()
-    async with client(app_with(tmp_path / "2", amp(fake))) as c:
+    async with client(app_with(make_database_url(), amp(fake))) as c:
         start = await c.get("/auth/signin")
         state = parse_qs(urlsplit(start.headers["location"]).query)["state"][0]
         fake.claims["nonce"] = "replayed-nonce"
@@ -137,23 +135,25 @@ async def test_rejects_forged_state_and_bad_tokens(tmp_path):
         assert r.headers["location"] == "/?auth_error=oauth_failed"
 
     # A tampered session cookie is ignored.
-    async with client(app_with(tmp_path / "3", amp(FakeAmp()))) as c:
+    async with client(app_with(make_database_url(), amp(FakeAmp()))) as c:
         c.cookies.set("shelfmark_session", "AQ" + "A" * 60)
         assert (await c.get("/api/library")).status_code == 401
 
 
-async def test_allowlist_blocks_other_accounts(tmp_path):
+async def test_allowlist_blocks_other_accounts(make_database_url):
     fake = FakeAmp()
-    async with client(app_with(tmp_path, amp(fake), allowed="user_SOMEONE_ELSE")) as c:
+    async with client(
+        app_with(make_database_url(), amp(fake), allowed="user_SOMEONE_ELSE")
+    ) as c:
         await sign_in(c, fake)
         r = await c.get("/api/library")
         assert r.status_code == 403 and "user_01ABC" in r.json()["detail"]
 
 
-async def test_production_fails_closed_without_configuration(tmp_path):
+async def test_production_fails_closed_without_configuration(make_database_url):
     auth = select_auth(Settings(_env_file=None))  # production default, no secrets
     assert auth.configuration_error()
-    async with client(app_with(tmp_path, auth)) as c:
+    async with client(app_with(make_database_url(), auth)) as c:
         assert (await c.get("/api/library")).status_code == 503
         assert (await c.get("/auth/signin")).status_code == 503
         assert (await c.get("/healthz")).status_code == 200

@@ -1,6 +1,4 @@
-"""The HTTP API end to end: app factory, real SQLite, fake fetcher, local auth."""
-
-from pathlib import Path
+"""The HTTP API end to end: app factory, real database, fake fetcher, local auth."""
 
 import httpx
 import pytest
@@ -23,8 +21,8 @@ def make_client(app) -> httpx.AsyncClient:
 
 
 @pytest.fixture
-async def client(tmp_path: Path):
-    url = f"sqlite+aiosqlite:///{tmp_path / 'api.sqlite3'}"
+async def client(make_database_url):
+    url = make_database_url()
     migrate(url)
     fetcher = FakeFetcher(
         {
