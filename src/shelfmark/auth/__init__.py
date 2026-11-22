@@ -3,7 +3,7 @@
 The rest of the app sees only ``Identity`` and the ``AuthProvider`` protocol. A
 provider says who made a request (or nobody), optionally contributes its own routes
 (sign-in, callback, sign-out), and reports whether it is correctly configured. The
-app factory picks one provider; swapping Sign in with Amp for another IdP or a
+app factory picks one provider; swapping Auth0 for another IdP or a
 reverse-proxy header means writing another provider, not touching the library.
 """
 
@@ -25,6 +25,8 @@ class AuthProvider(Protocol):
     name: str
     can_sign_out: bool
     sign_in_url: str | None
+    # Origin the browser is redirected to after a form post (sign-out), for CSP.
+    external_origin: str | None
 
     def configuration_error(self) -> str | None:
         """Why the provider cannot authenticate anyone, or None when ready."""
@@ -41,6 +43,7 @@ class LocalAuth:
     name: str = "local"
     can_sign_out: bool = False
     sign_in_url: str | None = None
+    external_origin: str | None = None
 
     def __init__(self, identity: Identity | None = None) -> None:
         self.identity = identity or Identity("local", "local", "Local reader")

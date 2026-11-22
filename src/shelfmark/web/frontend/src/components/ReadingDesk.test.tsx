@@ -159,6 +159,6 @@ test("an unauthenticated visitor is asked to sign in", async () => {
     json({ detail: "Sign in to continue.", sign_in_url: "/auth/signin?returnTo=/" }, 401),
   );
 
-  const link = await screen.findByRole("link", { name: "Sign in with Amp" });
+  const link = await screen.findByRole("link", { name: "Sign in" });
   expect(link.getAttribute("href")).toBe("/auth/signin?returnTo=/");
 });

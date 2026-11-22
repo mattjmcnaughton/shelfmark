@@ -25,7 +25,7 @@ export function AuthScreen({ error }: { error: ApiError }) {
         <p className="deskname">A keyboard-first personal reading desk.</p>
         {error.status === 401 ? (
           <a className="primary" href={signInUrl}>
-            Sign in with Amp
+            Sign in
           </a>
         ) : (
           <>

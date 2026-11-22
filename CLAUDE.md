@@ -44,7 +44,7 @@ src/shelfmark/
     frontend/               # Frontend application
   clients/                  # External API/service clients
   __main__.py               # Production entry point (python -m shelfmark)
-  auth/                     # Identity boundary: AuthProvider, LocalAuth, Sign in with Amp
+  auth/                     # Identity boundary: AuthProvider, LocalAuth, Sign in with Auth0
   db.py                     # Database (engine/sessions) and migrate()
   migrations/               # Alembic environment and versions
   models/                   # SQLAlchemy models

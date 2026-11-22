@@ -2,8 +2,9 @@
 # The build ships a relocatable CPython with dependencies, so the Box needs no Python.
 # Data lives in Neon Postgres (project shelfmark); migrations run on startup.
 # Secrets (set per deployment, never here): DATABASE_URL (postgresql+psycopg://…
-# ?sslmode=verify-full&sslrootcert=/etc/ssl/certs/ca-certificates.crt), AMP_OAUTH_CLIENT_ID, AMP_OAUTH_CLIENT_SECRET,
-# APP_SESSION_SECRET. Optional: SHELFMARK_ALLOWED_USER_IDS. Without them the API fails closed.
+# ?sslmode=verify-full&sslrootcert=/etc/ssl/certs/ca-certificates.crt),
+# AUTH0_CLIENT_SECRET, APP_SESSION_SECRET. Set AUTH0_DOMAIN, AUTH0_CLIENT_ID, and
+# optional SHELFMARK_ALLOWED_USER_IDS the same way. Without them the API fails closed.
 build: bash scripts/box-build.sh
 source: false
 artifacts: [runtime, src]

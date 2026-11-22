@@ -77,8 +77,8 @@ in `.data/`.
 
 `.amp/box.yaml` builds a self-contained release (`scripts/box-build.sh`: relocatable
 CPython, dependencies, built frontend) and runs `python -m shelfmark` on `$PORT`. Data
-lives in Neon Postgres: store the `DATABASE_URL` secret on the deployment before the
-first deploy, in the form
+lives in Neon Postgres: store the `DATABASE_URL` secret on the deployment (secrets
+need the deployment to exist, so set it after the first deploy and redeploy), in the form
 `postgresql+psycopg://USER:PASSWORD@HOST/shelfmark?sslmode=verify-full&sslrootcert=/etc/ssl/certs/ca-certificates.crt`.
 Neon's console URL works once its scheme is changed to `postgresql+psycopg://`.
 Migrations run on startup. Without `DATABASE_URL` the app falls back to SQLite at
@@ -88,11 +88,42 @@ Migrations run on startup. Without `DATABASE_URL` the app falls back to SQLite a
 amp boxes deploy --on <namespace>/<box> --name shelfmark
 ```
 
-Then register Sign in with Amp with redirect URI `<deployment url>/auth/callback` and
-store `AMP_OAUTH_CLIENT_ID`, `AMP_OAUTH_CLIENT_SECRET`, and `APP_SESSION_SECRET`
-(32+ random characters) on the deployment, optionally `SHELFMARK_ALLOWED_USER_IDS`,
-and redeploy. Until then the app serves health checks and the desk shell, and `/api/*`
-answers 503.
+Add `--domain <hostname>` to serve it on a custom domain that is Active on the Box
+owner's account; the sign-in callback follows `AMP_DEPLOYMENT_URL` automatically.
+
+Until sign-in is configured the app serves health checks and the desk shell, and
+`/api/*` answers 503.
+
+### Sign in with Auth0
+
+1. In an Auth0 tenant, create an application of type **Regular Web Application**.
+2. In its settings, with `<url>` the deployment URL (such as
+   `https://shelfmark--<namespace>.onamp.dev`):
+   - Allowed Callback URLs: `<url>/auth/callback`
+   - Allowed Logout URLs: `<url>/`
+   - Allowed Web Origins: leave empty
+3. Under Credentials, set the authentication method to **Client Secret (Basic)**.
+   Keep Advanced Settings → Grant Types at Authorization Code and
+   Advanced Settings → OAuth at **RS256**, OIDC Conformant.
+4. Under the application's Connections, enable only the connection your account uses
+   (for example Username-Password-Authentication or Google). To keep strangers from
+   creating accounts, turn off sign-ups on database connections, and set the
+   allowlist below.
+5. Store these on the deployment, then redeploy. From your own machine:
+   `amp secrets set <NAME> --box <namespace>/<box> --deployment shelfmark --secret --data-file <file>`;
+   an Amp thread can instead open a masked dialog for each value.
+   - `AUTH0_DOMAIN`: the tenant domain, such as `your-tenant.us.auth0.com`
+   - `AUTH0_CLIENT_ID` and `AUTH0_CLIENT_SECRET`: from the application's settings
+   - `APP_SESSION_SECRET`: 32+ random characters, such as `openssl rand -base64 48`
+   - optional `SHELFMARK_ALLOWED_USER_IDS`: comma-separated Auth0 user IDs (`sub`),
+     such as `google-oauth2|1234...`. Sign in once and the 403 page shows your ID.
+
+Deploy without `--private`: Shelfmark does its own sign-in, and Amp's access gate
+would redirect the desk's background `fetch` calls, which looks like being signed out.
+
+The redirect URI defaults to `$AMP_DEPLOYMENT_URL/auth/callback`; set
+`AUTH0_REDIRECT_URI` to override it (for example
+`http://localhost:8000/auth/callback` when testing against a real tenant locally).
 
 ## Architecture
 

@@ -16,9 +16,9 @@ the same site (cross-site `Sec-Fetch-Site` or a foreign `Origin` gets 403).
 
 | Method | Path | Description |
 | ------ | ---- | ----------- |
-| GET | `/auth/signin?returnTo=/` | Starts Sign in with Amp (302 to Amp). Only with the `amp` provider. |
+| GET | `/auth/signin?returnTo=/` | Starts Sign in with Auth0 (302 to the Auth0 tenant). Only with the `auth0` provider. |
 | GET | `/auth/callback` | OAuth redirect URI. |
-| POST | `/auth/signout` | Clears the session, 303 to `/`. |
+| POST | `/auth/signout` | Clears the session, 303 to Auth0 `/v2/logout`, which returns to `/`. |
 
 Without a session, `/api/*` returns 401 with
 `{"detail": "Sign in to continue.", "sign_in_url": "/auth/signin"}`.

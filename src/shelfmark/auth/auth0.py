@@ -1,13 +1,14 @@
-"""Sign in with Amp (OAuth 2.0 authorization code + PKCE, OpenID Connect).
+"""Sign in with Auth0 (OAuth 2.0 authorization code + PKCE, OpenID Connect).
 
-Follows Amp's reference implementation (the ``deploying-boxes`` skill template's
-``oauth.ts``): issuer ``https://auth.ampcode.com``, PKCE S256, ``resource`` set to
-the Amp API, an RS256 ID token verified against the issuer's JWKS with nonce,
-audience, ``azp``, and expiry checks, and server data kept in AES-GCM sealed
-HttpOnly cookies.
+Auth0 is a confidential "Regular Web Application": the server exchanges the code
+with its client secret and a PKCE S256 verifier, then verifies the RS256 ID token
+against the tenant's JWKS with issuer (``https://<domain>/``), audience, ``azp``,
+nonce, and expiry checks. Server data is kept in AES-GCM sealed HttpOnly cookies.
 
-Shelfmark only needs who the user is, never Amp API access, so the session cookie
-holds the verified identity and no tokens; there is nothing to refresh.
+Shelfmark only needs who the user is, never an API access token, so the session
+cookie holds the verified identity and no tokens; there is nothing to refresh.
+Sign-out also ends the Auth0 session (``/v2/logout``) so the next sign-in can pick
+a different account.
 """
 
 import base64
@@ -17,7 +18,7 @@ import secrets
 import time
 from dataclasses import dataclass
 from typing import Any, Protocol
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import quote, urlencode, urlsplit
 
 import aiohttp
 import jwt
@@ -32,8 +33,6 @@ from shelfmark.auth import Identity
 
 log = structlog.get_logger()
 
-ISSUER = "https://auth.ampcode.com"
-RESOURCE = "https://ampcode.com/api/v2"
 SCOPES = "openid profile email"
 SESSION_COOKIE = "shelfmark_session"
 TRANSACTION_COOKIE = "shelfmark_oauth"
@@ -45,7 +44,7 @@ class OAuthError(Exception):
     pass
 
 
-class AmpOAuthClient(Protocol):
+class OAuthClient(Protocol):
     """The two network calls the flow makes; faked in tests."""
 
     async def exchange_code(self, form: dict[str, str]) -> dict[str, Any]: ...
@@ -53,17 +52,25 @@ class AmpOAuthClient(Protocol):
     async def jwks(self) -> dict[str, Any]: ...
 
 
-class HttpAmpOAuthClient:
-    def __init__(self, issuer: str = ISSUER) -> None:
-        self.issuer = issuer
+class HttpAuth0Client:
+    """Authenticates to the token endpoint with HTTP Basic (client_secret_basic)."""
+
+    def __init__(self, base_url: str, client_id: str, client_secret: str) -> None:
+        self.base_url = base_url
+        # RFC 6749 2.3.1: form-encode each part before Basic encoding.
+        pair = f"{quote(client_id, safe='')}:{quote(client_secret, safe='')}"
+        self.authorization = "Basic " + base64.b64encode(pair.encode()).decode()
 
     async def exchange_code(self, form: dict[str, str]) -> dict[str, Any]:
         async with (
             aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as http,
             http.post(
-                f"{self.issuer}/oauth2/token",
+                f"{self.base_url}/oauth/token",
                 data=form,
-                headers={"Accept": "application/json"},
+                headers={
+                    "Accept": "application/json",
+                    "Authorization": self.authorization,
+                },
             ) as response,
         ):
             payload = await response.json(content_type=None)
@@ -77,7 +84,7 @@ class HttpAmpOAuthClient:
     async def jwks(self) -> dict[str, Any]:
         async with (
             aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as http,
-            http.get(f"{self.issuer}/oauth2/jwks") as response,
+            http.get(f"{self.base_url}/.well-known/jwks.json") as response,
         ):
             if response.status != 200:
                 raise OAuthError(f"JWKS fetch failed: HTTP {response.status}")
@@ -85,23 +92,45 @@ class HttpAmpOAuthClient:
 
 
 @dataclass(frozen=True)
-class AmpAuthConfig:
+class Auth0Config:
+    domain: str
     client_id: str
     client_secret: str
     redirect_uri: str
     session_secret: str
-    issuer: str = ISSUER
+
+    @property
+    def base_url(self) -> str:
+        return f"https://{self.domain}"
+
+    @property
+    def issuer(self) -> str:
+        # Auth0 issuers always end with a slash.
+        return f"https://{self.domain}/"
 
 
-def configuration_problem(config: AmpAuthConfig) -> str | None:
+def normalize_domain(value: str) -> str:
+    """Accept ``tenant.us.auth0.com`` or ``https://tenant.us.auth0.com/``."""
+    value = value.strip()
+    if "://" in value:
+        value = urlsplit(value).netloc
+    return value.strip("/").lower()
+
+
+def configuration_problem(config: Auth0Config) -> str | None:
+    if not config.domain or not all(
+        part and all(c.isalnum() or c == "-" for c in part)
+        for part in config.domain.split(".")
+    ):
+        return "AUTH0_DOMAIN must be a hostname such as tenant.us.auth0.com"
     if not config.client_id:
-        return "Missing AMP_OAUTH_CLIENT_ID"
+        return "Missing AUTH0_CLIENT_ID"
     if not config.client_secret:
-        return "Missing AMP_OAUTH_CLIENT_SECRET"
+        return "Missing AUTH0_CLIENT_SECRET"
     if len(config.session_secret) < 32:
         return "APP_SESSION_SECRET must contain at least 32 characters"
     if not config.redirect_uri:
-        return "Missing AMP_OAUTH_REDIRECT_URI (or AMP_DEPLOYMENT_URL)"
+        return "Missing AUTH0_REDIRECT_URI (or AMP_DEPLOYMENT_URL)"
     parts = urlsplit(config.redirect_uri)
     loopback = parts.hostname in ("localhost", "127.0.0.1", "::1")
     if (
@@ -158,23 +187,26 @@ def _b64(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).decode().rstrip("=")
 
 
-class AmpAuth:
-    name: str = "amp"
+class Auth0Auth:
+    name: str = "auth0"
     can_sign_out: bool = True
     sign_in_url: str | None = "/auth/signin"
 
     def __init__(
         self,
-        config: AmpAuthConfig,
-        client: AmpOAuthClient | None = None,
+        config: Auth0Config,
+        client: OAuthClient | None = None,
         clock=time.time,
     ) -> None:
         self.config = config
-        self.client = client or HttpAmpOAuthClient(config.issuer)
+        self.client = client or HttpAuth0Client(
+            config.base_url, config.client_id, config.client_secret
+        )
         self.clock = clock
         self._problem = configuration_problem(config)
         self._sealer = Sealer(config.session_secret) if not self._problem else None
         self.secure_cookies = not config.redirect_uri.startswith("http://")
+        self.external_origin = None if self._problem else config.base_url
 
     def configuration_error(self) -> str | None:
         return self._problem
@@ -194,7 +226,7 @@ class AmpAuth:
             return None
         email = payload.get("email")
         return Identity(
-            "amp",
+            "auth0",
             payload["sub"],
             payload["name"],
             email if isinstance(email, str) else None,
@@ -220,13 +252,12 @@ class AmpAuth:
                 "code_challenge_method": "S256",
                 "nonce": transaction["nonce"],
                 "redirect_uri": self.config.redirect_uri,
-                "resource": RESOURCE,
                 "response_type": "code",
                 "scope": SCOPES,
                 "state": transaction["state"],
             }
         )
-        url = f"{self.config.issuer}/oauth2/authorize?{query}"
+        url = f"{self.config.base_url}/authorize?{query}"
         return url, self._sealer.seal(transaction)
 
     def read_transaction(self, value: str | None) -> dict[str, Any] | None:
@@ -251,12 +282,10 @@ class AmpAuth:
         tokens = await self.client.exchange_code(
             {
                 "client_id": self.config.client_id,
-                "client_secret": self.config.client_secret,
                 "grant_type": "authorization_code",
                 "code": code,
                 "code_verifier": transaction["verifier"],
                 "redirect_uri": self.config.redirect_uri,
-                "resource": RESOURCE,
             }
         )
         id_token = tokens.get("id_token")
@@ -273,14 +302,15 @@ class AmpAuth:
                         for p in (claims.get("given_name"), claims.get("family_name"))
                         if p
                     ),
+                    claims.get("nickname"),
                     claims.get("email"),
                 )
                 if isinstance(v, str) and v.strip()
             ),
-            "Amp user",
+            "Reader",
         )
         email = claims.get("email") if isinstance(claims.get("email"), str) else None
-        identity = Identity("amp", claims["sub"], name[:200], email)
+        identity = Identity("auth0", claims["sub"], name[:200], email)
         cookie = self._sealer.seal(
             {
                 "v": 1,
@@ -336,6 +366,16 @@ class AmpAuth:
             raise OAuthError("ID token nonce or subject invalid")
         return claims
 
+    def logout_url(self) -> str:
+        parts = urlsplit(self.config.redirect_uri)
+        query = urlencode(
+            {
+                "client_id": self.config.client_id,
+                "returnTo": f"{parts.scheme}://{parts.netloc}/",
+            }
+        )
+        return f"{self.config.base_url}/v2/logout?{query}"
+
     # Routes
 
     def router(self) -> APIRouter:
@@ -352,7 +392,7 @@ class AmpAuth:
 
         def unavailable() -> None:
             if self._problem:
-                raise HTTPException(503, "Sign in with Amp is not configured.")
+                raise HTTPException(503, "Sign in with Auth0 is not configured.")
 
         @router.get("/signin")
         async def signin(returnTo: str = "/") -> RedirectResponse:  # noqa: N803
@@ -380,7 +420,7 @@ class AmpAuth:
                 try:
                     _identity, cookie = await self.finish(params["code"], transaction)
                 except (OAuthError, aiohttp.ClientError, ValueError) as error:
-                    log.warning("amp_sign_in_failed", reason=str(error))
+                    log.warning("auth0_sign_in_failed", reason=str(error))
                     target = "/?auth_error=oauth_failed"
                 else:
                     response = RedirectResponse(
@@ -397,7 +437,10 @@ class AmpAuth:
 
         @router.post("/signout")
         async def signout() -> RedirectResponse:
-            response = RedirectResponse("/", status_code=303)
+            # End the Auth0 session too; Auth0 sends the browser back to "/", which
+            # must be listed in the application's Allowed Logout URLs.
+            target = "/" if self._problem else self.logout_url()
+            response = RedirectResponse(target, status_code=303)
             response.delete_cookie(SESSION_COOKIE, path="/", secure=self.secure_cookies)
             return response
 

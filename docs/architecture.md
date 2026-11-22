@@ -52,7 +52,7 @@ The frontend is scaffolded separately into `src/shelfmark/web/frontend/` using t
   collaborators (`Database`, `PublicWebFetcher`, the auth provider) and passes them to
   `create_app`. Nothing below it reads global settings; tests call `create_app` with a
   fresh migrated database (SQLite, or Postgres in CI), `tests/fakes.FakeFetcher`, a `FakeClock`, and `LocalAuth` or
-  `AmpAuth` backed by a fake Amp IdP.
+  `Auth0Auth` backed by a fake Auth0 tenant.
 - **Domain.** `services/library.LibraryService` owns triage: the feed Inbox
   (not saved, not to try, unarchived), the deliberate Saved queue, the To try queue
   for tools, repos, skills, and ideas (a link is optional; a note says why), Archive/restore (restore returns a
@@ -66,9 +66,10 @@ The frontend is scaffolded separately into `src/shelfmark/web/frontend/` using t
   through psycopg, selected by `DATABASE_URL`. `SHELFMARK_TEST_DATABASE_URL` runs
   the database tests against Postgres, as CI does.
 - **Identity boundary.** `auth.AuthProvider` answers "who is this?" and contributes its
-  own routes. `auth.amp.AmpAuth` implements Sign in with Amp following Amp's reference
-  (PKCE S256, `resource`, RS256 ID token verified against JWKS with nonce/aud/azp/exp,
-  AES-GCM sealed HttpOnly cookies, no tokens stored). `LocalAuth` is allowed only with
+  own routes. `auth.auth0.Auth0Auth` implements Sign in with Auth0 as a confidential
+  web app (PKCE S256 plus client secret, RS256 ID token verified against the tenant
+  JWKS with iss/nonce/aud/azp/exp, AES-GCM sealed HttpOnly cookies, no tokens stored;
+  sign-out also ends the Auth0 session). `LocalAuth` is allowed only with
   `SHELFMARK_ENV=development`. Production is the default and fails closed: missing
   OAuth settings make `/api/*` return 503. `SHELFMARK_ALLOWED_USER_IDS` restricts access.
 - **Untrusted content.** `clients/fetcher.PublicWebFetcher` only fetches http(s) on

@@ -39,9 +39,9 @@ class Settings(BaseSettings):
     )
     database_url_override: str | None = Field(None, validation_alias="DATABASE_URL")
 
-    # Identity: "amp" (Sign in with Amp) or "local" (single local user, dev only).
-    auth_provider: Literal["amp", "local"] = Field(
-        "amp", validation_alias="SHELFMARK_AUTH"
+    # Identity: "auth0" (Sign in with Auth0) or "local" (single local user, dev only).
+    auth_provider: Literal["auth0", "local"] = Field(
+        "auth0", validation_alias="SHELFMARK_AUTH"
     )
     allowed_user_ids: str = Field(
         "",
@@ -49,9 +49,10 @@ class Settings(BaseSettings):
             "SHELFMARK_ALLOWED_USER_IDS", "APP_ALLOWED_USER_IDS"
         ),
     )
-    amp_oauth_client_id: str = Field("", validation_alias="AMP_OAUTH_CLIENT_ID")
-    amp_oauth_client_secret: str = Field("", validation_alias="AMP_OAUTH_CLIENT_SECRET")
-    amp_oauth_redirect_uri: str = Field("", validation_alias="AMP_OAUTH_REDIRECT_URI")
+    auth0_domain: str = Field("", validation_alias="AUTH0_DOMAIN")
+    auth0_client_id: str = Field("", validation_alias="AUTH0_CLIENT_ID")
+    auth0_client_secret: str = Field("", validation_alias="AUTH0_CLIENT_SECRET")
+    auth0_redirect_uri: str = Field("", validation_alias="AUTH0_REDIRECT_URI")
     deployment_url: str = Field("", validation_alias="AMP_DEPLOYMENT_URL")
     session_secret: str = Field("", validation_alias="APP_SESSION_SECRET")
 

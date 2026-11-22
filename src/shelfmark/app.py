@@ -14,7 +14,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from shelfmark.auth import AuthProvider, LocalAuth
-from shelfmark.auth.amp import AmpAuth, AmpAuthConfig
+from shelfmark.auth.auth0 import Auth0Auth, Auth0Config, normalize_domain
 from shelfmark.clients.fetcher import Fetcher, PublicWebFetcher
 from shelfmark.config import Settings
 from shelfmark.db import Database, migrate
@@ -27,7 +27,7 @@ from shelfmark.web.serve import mount_frontend
 CSP = (
     "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; "
     "frame-src https://www.youtube-nocookie.com; object-src 'none'; base-uri 'none'; "
-    "frame-ancestors 'self' https://ampcode.com; form-action 'self' https://auth.ampcode.com"
+    "frame-ancestors 'self' https://ampcode.com; form-action 'self'"
 )
 
 
@@ -68,13 +68,15 @@ def create_app(
     app.state.auth = auth
     app.state.clock = clock
 
+    csp = f"{CSP} {auth.external_origin}" if auth.external_origin else CSP
+
     app.add_exception_handler(library.ApiError, library.api_error_handler)
     app.add_exception_handler(LibraryError, library.api_error_handler)
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next) -> Response:
         response = await call_next(request)
-        response.headers.setdefault("Content-Security-Policy", CSP)
+        response.headers.setdefault("Content-Security-Policy", csp)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         if not request.url.path.startswith("/assets/"):
@@ -103,13 +105,14 @@ def select_auth(settings: Settings) -> AuthProvider:
                 "SHELFMARK_AUTH=local is only allowed with SHELFMARK_ENV=development"
             )
         return LocalAuth()
-    redirect = settings.amp_oauth_redirect_uri.strip()
+    redirect = settings.auth0_redirect_uri.strip()
     if not redirect and settings.deployment_url:
         redirect = settings.deployment_url.rstrip("/") + "/auth/callback"
-    return AmpAuth(
-        AmpAuthConfig(
-            client_id=settings.amp_oauth_client_id.strip(),
-            client_secret=settings.amp_oauth_client_secret.strip(),
+    return Auth0Auth(
+        Auth0Config(
+            domain=normalize_domain(settings.auth0_domain),
+            client_id=settings.auth0_client_id.strip(),
+            client_secret=settings.auth0_client_secret.strip(),
             redirect_uri=redirect,
             session_secret=settings.session_secret.strip(),
         )
