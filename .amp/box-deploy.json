@@ -1,0 +1,9 @@
+{
+  "targets": {
+    "default": {
+      "on": "mattjmcnaughton/apps",
+      "name": "shelfmark",
+      "domain": "shelfmark.mattjmcnaughton.com"
+    }
+  }
+}
