@@ -76,9 +76,13 @@ in `.data/`.
 ## Deployment (Amp Box)
 
 `.amp/box.yaml` builds a self-contained release (`scripts/box-build.sh`: relocatable
-CPython, dependencies, built frontend) and runs `python -m shelfmark` on `$PORT`. The
-SQLite database is `$AMP_DEPLOYMENT_DATA_DIRECTORY/shelfmark.sqlite3`, which survives
-redeploys; migrations run on startup.
+CPython, dependencies, built frontend) and runs `python -m shelfmark` on `$PORT`. Data
+lives in Neon Postgres: store the `DATABASE_URL` secret on the deployment before the
+first deploy, in the form
+`postgresql+psycopg://USER:PASSWORD@HOST/shelfmark?sslmode=verify-full&sslrootcert=/etc/ssl/certs/ca-certificates.crt`.
+Neon's console URL works once its scheme is changed to `postgresql+psycopg://`.
+Migrations run on startup. Without `DATABASE_URL` the app falls back to SQLite at
+`$AMP_DEPLOYMENT_DATA_DIRECTORY/shelfmark.sqlite3`.
 
 ```sh
 amp boxes deploy --on <namespace>/<box> --name shelfmark

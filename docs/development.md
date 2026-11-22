@@ -79,6 +79,15 @@ Tests are organized by type:
 - `tests/integration/` — tests with real dependencies
 - `tests/e2e/` — end-to-end tests
 
+Tests use a temporary SQLite file per database. To run them on Postgres, point
+`SHELFMARK_TEST_DATABASE_URL` at a server where the user can create databases; each
+test gets a fresh database that is dropped afterwards:
+
+```sh
+SHELFMARK_TEST_DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost/postgres \
+  uv run pytest tests/integration tests/e2e
+```
+
 Use `@pytest.mark.external` for tests that hit external services. These run via `just test-external`.
 
 ## Docker
