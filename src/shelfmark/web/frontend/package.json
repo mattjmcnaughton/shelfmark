@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "A keyboard-first personal reading desk",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",

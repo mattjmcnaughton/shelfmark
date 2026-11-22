@@ -100,4 +100,4 @@ See [docs/api.md](docs/api.md) for endpoint reference.
 
 ## License
 
-[Proprietary](LICENSE)
+[MIT](LICENSE)
