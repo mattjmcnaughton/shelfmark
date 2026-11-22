@@ -54,7 +54,8 @@ The frontend is scaffolded separately into `src/shelfmark/web/frontend/` using t
   temporary SQLite file, `tests/fakes.FakeFetcher`, a `FakeClock`, and `LocalAuth` or
   `AmpAuth` backed by a fake Amp IdP.
 - **Domain.** `services/library.LibraryService` owns triage: the feed Inbox
-  (unsaved, unarchived), the deliberate Saved queue, Archive/restore (restore returns a
+  (not saved, not to try, unarchived), the deliberate Saved queue, the To try queue
+  for tools, repos, skills, and ideas (a link is optional; a note says why), Archive/restore (restore returns a
   saved item to Saved), tags, saving links (article extraction with link-only fallback,
   YouTube as one canonical video item), and following/refreshing RSS/Atom feeds.
   `services/refresher` refreshes all users' feeds every `SHELFMARK_REFRESH_MINUTES`.

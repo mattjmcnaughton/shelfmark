@@ -8,7 +8,7 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 import structlog
 
@@ -28,7 +28,8 @@ from shelfmark.services.urls import (
 log = structlog.get_logger()
 
 Clock = Callable[[], datetime]
-VIEWS = frozenset({"inbox", "saved", "archive", "feed", "tag"})
+VIEWS = frozenset({"inbox", "saved", "try", "archive", "feed", "tag"})
+MAX_NOTE_CHARS = 2000
 MAX_TAGS = 20
 MAX_TAG_CHARS = 50
 
@@ -64,6 +65,11 @@ def clean_tags(raw: list[str]) -> list[str]:
         if name:
             seen.setdefault(name, None)
     return list(seen)[:MAX_TAGS]
+
+
+def clean_note(raw: str) -> str:
+    lines = [" ".join(line.split()) for line in raw.replace("\r\n", "\n").split("\n")]
+    return "\n".join(lines).strip()[:MAX_NOTE_CHARS]
 
 
 class LibraryService:
@@ -104,15 +110,24 @@ class LibraryService:
         *,
         saved: bool | None = None,
         archived: bool | None = None,
+        trying: bool | None = None,
         tags: list[str] | None = None,
+        note: str | None = None,
     ) -> Item:
         item = await self.item(user_id, item_id)
         now = self.clock()
+        # Adding to Saved or To try is a deliberate choice; it pulls an item out of
+        # Archive. Removing it leaves the archive state alone.
         if saved is not None:
             item.saved_at = (item.saved_at or now) if saved else None
             if saved:
-                # Saving is a deliberate "read this"; it pulls an item out of Archive.
                 item.archived_at = None
+        if trying is not None:
+            item.try_at = (item.try_at or now) if trying else None
+            if trying:
+                item.archived_at = None
+        if note is not None:
+            item.note = clean_note(note)
         if archived is not None:
             item.archived_at = (item.archived_at or now) if archived else None
         if tags is not None:
@@ -123,18 +138,38 @@ class LibraryService:
     # Saving links
 
     async def save_link(
-        self, user_id: int, raw_url: str, title: str = ""
+        self,
+        user_id: int,
+        raw_url: str,
+        title: str = "",
+        *,
+        note: str = "",
+        queue: str = "saved",
     ) -> SaveResult:
-        url = _parse(raw_url)
+        """Add a link (or, for ``queue="try"``, possibly just a name) to a queue."""
+        if queue not in ("saved", "try"):
+            raise LibraryError("Unknown queue.")
         title = plain_text(title, 400)
+        note = clean_note(note)
+        if not raw_url.strip():
+            if queue != "try":
+                raise LibraryError("Enter a full HTTP or HTTPS URL.")
+            if not title:
+                raise LibraryError("Give it a name or a link.")
+            thing = Item(
+                url=None, kind="thing", title=title, source="", copy="none", body=[]
+            )
+            return await self._create(user_id, thing, queue, note)
+        url = _parse(raw_url)
         key = canonical_item_url(url)
-        now = self.clock()
         existing = await self.repo.item_by_url(user_id, key)
         if existing is not None:
-            existing.saved_at = existing.saved_at or now
+            _enqueue(existing, queue, self.clock())
             existing.archived_at = None
             if title:
                 existing.title = title
+            if note:
+                existing.note = note
             await self.repo.commit()
             return SaveResult(await self.repo.refresh_item(existing), created=False)
 
@@ -151,8 +186,16 @@ class LibraryService:
             )
         else:
             item = await self._article(url, title)
+        return await self._create(user_id, item, queue, note)
+
+    async def _create(
+        self, user_id: int, item: Item, queue: str, note: str
+    ) -> SaveResult:
+        now = self.clock()
         item.user_id = user_id
-        item.published_at = item.created_at = item.saved_at = now
+        item.note = note
+        item.published_at = item.created_at = now
+        _enqueue(item, queue, now)
         await self.repo.add_item(item)
         await self.repo.commit()
         return SaveResult(await self.repo.refresh_item(item), created=True)
@@ -180,7 +223,7 @@ class LibraryService:
             return item
         article = extract_article(page.text)
         if article.title and not title:
-            item.title = article.title
+            item.title = github_repo_name(url) or article.title
         if article.blocks:
             item.body = article.blocks
             item.author = article.author
@@ -272,6 +315,22 @@ class LibraryService:
                     )
                 )
             await self.repo.link_entry(feed.id, item.id)
+
+
+def github_repo_name(url: str) -> str | None:
+    """``owner/repo`` for a GitHub repository URL; its page title is too long."""
+    parts = urlsplit(url)
+    segments = [s for s in parts.path.split("/") if s]
+    if parts.hostname in ("github.com", "www.github.com") and len(segments) == 2:
+        return "/".join(segments)
+    return None
+
+
+def _enqueue(item: Item, queue: str, now: datetime) -> None:
+    if queue == "try":
+        item.try_at = item.try_at or now
+    else:
+        item.saved_at = item.saved_at or now
 
 
 def _parse(raw_url: str) -> str:

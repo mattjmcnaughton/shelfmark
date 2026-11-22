@@ -12,13 +12,14 @@ export type Library = {
   user: { name: string; can_sign_out: boolean };
   feeds: Feed[];
   tags: string[];
-  counts: { inbox: number; saved: number; archive: number };
+  counts: { inbox: number; saved: number; try: number; archive: number };
 };
 
 export type ItemSummary = {
   id: number;
-  url: string;
-  kind: "article" | "video";
+  /** `null` for a thing to try that has no link. */
+  url: string | null;
+  kind: "article" | "video" | "thing";
   title: string;
   source: string;
   author: string | null;
@@ -26,19 +27,25 @@ export type ItemSummary = {
   video_id: string | null;
   published_at: string | null;
   saved: boolean;
+  trying: boolean;
   archived: boolean;
+  /** The user's own plain-text note, such as why something is worth trying. */
+  note: string;
   tags: string[];
   feed_ids: number[];
-  copy: "feed" | "extracted" | "link";
+  copy: "feed" | "extracted" | "link" | "none";
 };
 
 export type ItemDetail = ItemSummary & { body: { text: string; heading: boolean }[] };
 
-export type ItemPatch = Partial<Pick<ItemSummary, "saved" | "archived" | "tags">>;
+export type ItemPatch = Partial<
+  Pick<ItemSummary, "saved" | "trying" | "archived" | "tags" | "note">
+>;
 
 export type View =
   | { kind: "inbox" }
   | { kind: "saved" }
+  | { kind: "try" }
   | { kind: "archive" }
   | { kind: "feed"; feedId: number }
   | { kind: "tag"; tag: string };

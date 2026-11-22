@@ -211,3 +211,82 @@ async def test_users_cannot_see_each_others_items(database):
     with pytest.raises(LibraryError):
         await svc.item(other.id, item.id)
     await session.close()
+
+
+async def test_to_try_queue_holds_named_things_and_promoted_feed_items(database):
+    fetcher = FakeFetcher(
+        {
+            FEED: rss(
+                "B",
+                (
+                    "Tool post",
+                    "https://blog.example.com/t",
+                    "Fri, 20 Nov 2026 09:00:00 GMT",
+                    "<p>x</p>",
+                ),
+                (
+                    "Other",
+                    "https://blog.example.com/o",
+                    "Thu, 19 Nov 2026 09:00:00 GMT",
+                    "<p>y</p>",
+                ),
+            ),
+            "https://github.com/example/t3code": ARTICLE,
+        }
+    )
+    svc, uid, session = await service(database, fetcher, FakeClock())
+
+    # A thing with no link at all: just a name and why.
+    thing = (
+        await svc.save_link(
+            uid, "", "omnigent", note="Try  on the\r\nshelfmark repo", queue="try"
+        )
+    ).item
+    assert (thing.url, thing.kind, thing.copy) == (None, "thing", "none")
+    assert thing.note == "Try on the\nshelfmark repo"
+    # A second link-less thing must not collide on the (user_id, url) constraint.
+    await svc.save_link(uid, "", "a skill", queue="try")
+    with pytest.raises(LibraryError, match="name or a link"):
+        await svc.save_link(uid, "  ", "", queue="try")
+    with pytest.raises(LibraryError):
+        await svc.save_link(uid, "", "no url", queue="saved")
+
+    # A repo link to try is fetched like an article but is not in Saved.
+    repo = (
+        await svc.save_link(uid, "https://github.com/example/t3code", queue="try")
+    ).item
+    assert repo.copy == "extracted" and repo.saved_at is None
+    assert repo.title == "example/t3code"
+
+    # A feed item moved to To try leaves the Inbox.
+    await svc.follow(uid, FEED)
+    post = (await svc.items(uid, "inbox", None, None))[0]
+    await svc.update(uid, post.id, trying=True)
+    assert await titles(svc, uid, "inbox") == ["Other"]
+    assert set(await titles(svc, uid, "try")) == {
+        "omnigent",
+        "a skill",
+        repo.title,
+        "Tool post",
+    }
+    assert await svc.repo.counts(uid) == {
+        "inbox": 1,
+        "saved": 0,
+        "try": 4,
+        "archive": 0,
+    }
+
+    # Archiving marks it tried; restoring returns it to To try, not the Inbox.
+    await svc.update(uid, thing.id, archived=True)
+    assert "omnigent" not in await titles(svc, uid, "try")
+    await svc.update(uid, thing.id, archived=False)
+    assert "omnigent" in await titles(svc, uid, "try")
+    assert "omnigent" not in await titles(svc, uid, "inbox")
+
+    # Adding to To try pulls an item out of Archive; removing it returns it to Inbox.
+    await svc.update(uid, post.id, archived=True)
+    await svc.update(uid, post.id, trying=True)
+    assert "Tool post" in await titles(svc, uid, "try")
+    await svc.update(uid, post.id, trying=False, note="")
+    assert "Tool post" in await titles(svc, uid, "inbox")
+    await session.close()

@@ -124,19 +124,23 @@ class Item(Base):
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
-    url: Mapped[str] = mapped_column(String(2048))
-    kind: Mapped[str] = mapped_column(String(16))  # article | video
+    # Null for a thing to try that has no link. NULLs never collide in the unique
+    # constraint on SQLite or Postgres.
+    url: Mapped[str | None] = mapped_column(String(2048))
+    kind: Mapped[str] = mapped_column(String(16))  # article | video | thing
     title: Mapped[str] = mapped_column(String(400))
     source: Mapped[str] = mapped_column(String(200))
     author: Mapped[str] = mapped_column(String(200), default="")
     deck: Mapped[str] = mapped_column(String(300), default="")
     # Plain-text blocks: [{"text": str, "heading": bool}]. Never HTML.
     body: Mapped[list[dict]] = mapped_column(JSON, default=list)
-    copy: Mapped[str] = mapped_column(String(16))  # feed | extracted | link
+    copy: Mapped[str] = mapped_column(String(16))  # feed | extracted | link | none
+    note: Mapped[str] = mapped_column(String(2000), default="", server_default="")
     video_id: Mapped[str | None] = mapped_column(String(11))
     published_at: Mapped[datetime] = mapped_column(Timestamp, index=True)
     created_at: Mapped[datetime] = mapped_column(Timestamp)
     saved_at: Mapped[datetime | None] = mapped_column(Timestamp)
+    try_at: Mapped[datetime | None] = mapped_column(Timestamp)
     archived_at: Mapped[datetime | None] = mapped_column(Timestamp)
 
     tags: Mapped[list[Tag]] = relationship(

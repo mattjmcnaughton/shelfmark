@@ -118,9 +118,13 @@ class LibraryRepository:
         query = select(Item).where(Item.user_id == user_id)
         not_archived = Item.archived_at.is_(None)
         if view == "inbox":
-            query = query.where(not_archived, Item.saved_at.is_(None))
+            query = query.where(
+                not_archived, Item.saved_at.is_(None), Item.try_at.is_(None)
+            )
         elif view == "saved":
             query = query.where(not_archived, Item.saved_at.is_not(None))
+        elif view == "try":
+            query = query.where(not_archived, Item.try_at.is_not(None))
         elif view == "archive":
             query = query.where(Item.archived_at.is_not(None))
         elif view == "feed":
@@ -155,8 +159,11 @@ class LibraryRepository:
             ) or 0
 
         return {
-            "inbox": await count(mine, live, Item.saved_at.is_(None)),
+            "inbox": await count(
+                mine, live, Item.saved_at.is_(None), Item.try_at.is_(None)
+            ),
             "saved": await count(mine, live, Item.saved_at.is_not(None)),
+            "try": await count(mine, live, Item.try_at.is_not(None)),
             "archive": await count(mine, Item.archived_at.is_not(None)),
         }
 

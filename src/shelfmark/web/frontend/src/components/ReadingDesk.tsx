@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Expand,
   Film,
+  FlaskConical,
   FolderOpen,
   Inbox,
   Keyboard,
@@ -29,28 +30,47 @@ import {
   type View,
   api,
 } from "../lib/api";
-import { dateLabel } from "../lib/format";
+import { dateLabel, sourceLabel } from "../lib/format";
 import { AuthScreen, SignOutForm } from "./AuthScreen";
 import { ItemSheet } from "./ItemSheet";
 
-type Modal = "" | "Save a link" | "Add subscription" | "Edit tags" | "Keyboard shortcuts";
+type Modal =
+  | ""
+  | "Save a link"
+  | "Add something to try"
+  | "Add subscription"
+  | "Edit tags"
+  | "Edit note"
+  | "Keyboard shortcuts";
+
+const NOTE_MAX = 2000;
 
 const LIBRARY_VIEWS = [
   { kind: "inbox", label: "Inbox", Icon: Inbox },
   { kind: "saved", label: "Saved", Icon: Bookmark },
+  { kind: "try", label: "To try", Icon: FlaskConical },
   { kind: "archive", label: "Archive", Icon: Archive },
 ] as const;
 
 const SHORTCUTS = [
   ["J / K", "Next / previous item"],
   ["S", "Toggle saved"],
+  ["E", "Toggle To try"],
   ["T", "Edit tags"],
   ["A", "Archive / restore"],
   ["F", "Toggle focus view"],
   ["N", "Save a link"],
+  ["I", "Add something to try"],
   ["?", "Show shortcuts"],
   ["Esc", "Close dialog or leave focus"],
 ];
+
+const kindLabel = (x: ItemSummary) =>
+  x.trying ? "To try" : x.kind === "video" ? "Video" : x.kind === "thing" ? "Thing" : "Article";
+
+/** Where restoring an archived item puts it (see docs/api.md). */
+const restoreLabel = (x: ItemSummary) =>
+  x.trying ? "Restore to To try" : x.saved ? "Restore to Saved" : "Return to Inbox";
 
 const sameView = (a: View, b: View) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -161,6 +181,15 @@ export function ReadingDesk() {
       return target.saved ? "Removed from Saved" : "Added to Saved";
     });
   }
+  function toggleTry() {
+    if (!item) return;
+    const target = item;
+    run(async () => {
+      await patch(target, { trying: !target.trying });
+      await syncServerState();
+      return target.trying ? "Removed from To try" : "Added to To try";
+    });
+  }
   function archive() {
     if (!item) return;
     const target = item;
@@ -173,7 +202,8 @@ export function ReadingDesk() {
         focusRow(next?.id);
       }
       await syncServerState();
-      if (!target.archived) return "Moved to Archive";
+      if (!target.archived) return target.trying ? "Marked tried" : "Moved to Archive";
+      if (target.trying) return "Restored to To try";
       return target.saved ? "Restored to Saved" : "Returned to Inbox";
     });
   }
@@ -215,10 +245,21 @@ export function ReadingDesk() {
     const data = new FormData(e.currentTarget);
     const name = String(data.get("name") ?? "").trim();
     const url = String(data.get("url") ?? "").trim();
+    const note = String(data.get("note") ?? "").trim();
     const kind = modal;
     const target = item;
     setFormError("");
+    if (kind === "Add something to try" && !name && !url) {
+      setFormError("Give it a name or a link.");
+      return;
+    }
     const ok = await run(async () => {
+      if (kind === "Edit note") {
+        if (!target) return;
+        await patch(target, { note });
+        await syncServerState();
+        return "Note saved";
+      }
       if (kind === "Edit tags") {
         if (!target) return;
         const next = name.split(",").map((tag) => tag.trim());
@@ -232,14 +273,20 @@ export function ReadingDesk() {
         choose({ kind: "feed", feedId: feed.id });
         return "Subscription added";
       }
-      const saved = await api<ItemDetail>("/api/items", "POST", { url, title: name || undefined });
-      queryClient.setQueryData(keys.item(saved.id), saved);
+      const trying = kind === "Add something to try";
+      const added = await api<ItemDetail>("/api/items", "POST", {
+        queue: trying ? "try" : "saved",
+        url: url || undefined,
+        title: name || undefined,
+        note: note || undefined,
+      });
+      queryClient.setQueryData(keys.item(added.id), added);
       await syncServerState();
-      setView({ kind: "saved" });
-      setSelectedId(saved.id);
+      setView({ kind: trying ? "try" : "saved" });
+      setSelectedId(added.id);
       setMobile("read");
       setFocus(false);
-      return "Link saved";
+      return trying ? "Added to To try" : "Link saved";
     }, setFormError);
     if (ok) close();
   }
@@ -247,7 +294,7 @@ export function ReadingDesk() {
   useEffect(() => {
     if (modal) {
       dlg.current?.showModal();
-      dlg.current?.querySelector<HTMLElement>("input, button")?.focus();
+      dlg.current?.querySelector<HTMLElement>("input, textarea, button")?.focus();
     }
   }, [modal]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: start each newly selected item at the top
@@ -268,16 +315,25 @@ export function ReadingDesk() {
   }, [toast]);
   useEffect(() => {
     function key(e: KeyboardEvent) {
-      if (modal || e.ctrlKey || e.metaKey || e.altKey || e.target instanceof HTMLInputElement)
+      if (
+        modal ||
+        e.ctrlKey ||
+        e.metaKey ||
+        e.altKey ||
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement
+      )
         return;
       const acts: Record<string, () => void> = {
         j: () => move(1),
         k: () => move(-1),
         s: save,
+        e: toggleTry,
         a: archive,
         t: () => item && open("Edit tags"),
         f: () => item && zoom(),
         n: () => open("Save a link"),
+        i: () => open("Add something to try"),
         "?": () => open("Keyboard shortcuts"),
         Escape: () => {
           if (focus) zoom();
@@ -308,6 +364,10 @@ export function ReadingDesk() {
         <button type="button" className="primary" onClick={() => open("Save a link")}>
           <Plus size={18} />
           Save a link<kbd>N</kbd>
+        </button>
+        <button type="button" className="secondary" onClick={() => open("Add something to try")}>
+          <FlaskConical size={17} />
+          Add something to try<kbd>I</kbd>
         </button>
         <div className="navscroll">
           <div className="navlabel">Library</div>
@@ -421,13 +481,19 @@ export function ReadingDesk() {
               >
                 <div className="source">
                   <i className={`spot ${spot(x)}`} />
-                  {x.source}
+                  {sourceLabel(x)}
                   {x.saved && <Bookmark size={12} />}
                 </div>
                 <strong>{x.title}</strong>
                 <span className="kind">
-                  {x.kind === "video" ? <Film /> : <BookOpen />}
-                  {x.kind === "video" ? "Video" : "Article"}
+                  {x.trying || x.kind === "thing" ? (
+                    <FlaskConical />
+                  ) : x.kind === "video" ? (
+                    <Film />
+                  ) : (
+                    <BookOpen />
+                  )}
+                  {kindLabel(x)}
                 </span>
               </button>
             </Fragment>
@@ -440,7 +506,9 @@ export function ReadingDesk() {
                   ? loadError
                   : feedView
                     ? "No feed entries yet. Try refreshing."
-                    : "No items here yet."}
+                    : view.kind === "try"
+                      ? "Nothing to try yet. Press I to add something."
+                      : "No items here yet."}
             </p>
           )}
         </div>
@@ -459,7 +527,7 @@ export function ReadingDesk() {
             {item && (
               <>
                 <span>/</span>
-                {item.kind === "video" ? "Video" : "Article"}
+                {kindLabel(item)}
               </>
             )}
           </span>
@@ -479,6 +547,16 @@ export function ReadingDesk() {
                 <button
                   type="button"
                   disabled={busy}
+                  title="To try (E)"
+                  aria-label="To try"
+                  aria-pressed={item.trying}
+                  onClick={toggleTry}
+                >
+                  <FlaskConical fill={item.trying ? "currentColor" : "none"} />
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
                   title="Edit tags (T)"
                   aria-label="Edit tags"
                   onClick={() => open("Edit tags")}
@@ -490,15 +568,13 @@ export function ReadingDesk() {
                   disabled={busy}
                   title={
                     item.archived
-                      ? `${item.saved ? "Restore to Saved" : "Return to Inbox"} (A)`
-                      : "Archive (A)"
+                      ? `${restoreLabel(item)} (A)`
+                      : item.trying
+                        ? "Mark tried (A)"
+                        : "Archive (A)"
                   }
                   aria-label={
-                    item.archived
-                      ? item.saved
-                        ? "Restore to Saved"
-                        : "Return to Inbox"
-                      : "Archive item"
+                    item.archived ? restoreLabel(item) : item.trying ? "Mark tried" : "Archive item"
                   }
                   onClick={archive}
                 >
@@ -522,18 +598,25 @@ export function ReadingDesk() {
               spot={spot(item)}
               busy={busy}
               onEditTags={() => open("Edit tags")}
+              onEditNote={() => open("Edit note")}
             />
           ) : (
             <div className="blank">
               <FolderOpen />
               <h2>{loading ? "Opening your desk…" : "Your desk is clear."}</h2>
               {!loading && (
-                <p>Save an article or YouTube link, or follow a feed to start reading.</p>
+                <p>
+                  Save an article or YouTube link, note something to try, or follow a feed to start
+                  reading.
+                </p>
               )}
               {!loading && (
                 <div className="start">
                   <button type="button" onClick={() => open("Save a link")}>
                     Save a link
+                  </button>
+                  <button type="button" onClick={() => open("Add something to try")}>
+                    <FlaskConical size={15} /> Add something to try
                   </button>
                   <button type="button" onClick={() => open("Add subscription")}>
                     <Rss size={15} /> Follow a feed
@@ -602,6 +685,42 @@ export function ReadingDesk() {
                       <input name="name" defaultValue={item?.tags.join(", ")} autoComplete="off" />
                     </label>
                   </>
+                ) : modal === "Edit note" ? (
+                  <>
+                    <p>
+                      {item?.trying
+                        ? "Why is this worth trying? Plain text, up to 2000 characters."
+                        : "A private note for this item. Plain text, up to 2000 characters."}
+                    </p>
+                    <label>
+                      Note
+                      <textarea
+                        name="note"
+                        rows={6}
+                        maxLength={NOTE_MAX}
+                        defaultValue={item?.note}
+                      />
+                    </label>
+                  </>
+                ) : modal === "Add something to try" ? (
+                  <>
+                    <p>
+                      Note a tool, repo, skill, or idea to try later. With a link, Shelfmark will
+                      also fetch a readable copy.
+                    </p>
+                    <label>
+                      Name
+                      <input name="name" autoComplete="off" placeholder="t3code" />
+                    </label>
+                    <label>
+                      Link (optional)
+                      <input name="url" placeholder="https://…" />
+                    </label>
+                    <label>
+                      Why try it? (optional)
+                      <textarea name="note" rows={4} maxLength={NOTE_MAX} />
+                    </label>
+                  </>
                 ) : (
                   <>
                     <p>
@@ -629,9 +748,13 @@ export function ReadingDesk() {
                       ? "Working…"
                       : modal === "Edit tags"
                         ? "Save tags"
-                        : modal === "Save a link"
-                          ? "Save link"
-                          : "Add feed"}
+                        : modal === "Edit note"
+                          ? "Save note"
+                          : modal === "Add something to try"
+                            ? "Add to To try"
+                            : modal === "Save a link"
+                              ? "Save link"
+                              : "Add feed"}
                   </button>
                 </div>
               </>

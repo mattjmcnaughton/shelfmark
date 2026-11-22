@@ -18,6 +18,7 @@ from shelfmark.dtos.library import (
     ItemSummary,
     LibraryOut,
     LinkIn,
+    SaveIn,
     UserOut,
 )
 from shelfmark.models import User
@@ -90,21 +91,21 @@ Ctx = Annotated[Context, Depends(context)]
 router = APIRouter(prefix="/api", tags=["library"])
 
 
-@router.get("/library")
+@router.get("/library", response_model_by_alias=True)
 async def library(ctx: Ctx) -> LibraryOut:
     repo = ctx.service.repo
     return LibraryOut(
         user=UserOut(name=ctx.user.display_name, can_sign_out=ctx.auth.can_sign_out),
         feeds=[FeedOut.of(f) for f in await repo.feeds(ctx.user.id)],
         tags=await repo.tag_names(ctx.user.id),
-        counts=Counts(**await repo.counts(ctx.user.id)),
+        counts=Counts.model_validate(await repo.counts(ctx.user.id)),
     )
 
 
 @router.get("/items", response_model_by_alias=True)
 async def items(
     ctx: Ctx,
-    view: Literal["inbox", "saved", "archive", "feed", "tag"] = "inbox",
+    view: Literal["inbox", "saved", "try", "archive", "feed", "tag"] = "inbox",
     feed_id: Annotated[int | None, Query()] = None,
     tag: Annotated[str | None, Query(max_length=50)] = None,
 ) -> ItemList:
@@ -118,8 +119,10 @@ async def item(ctx: Ctx, item_id: int) -> ItemDetail:
 
 
 @router.post("/items", response_model_by_alias=True)
-async def save_link(ctx: Ctx, body: LinkIn, response: Response) -> ItemDetail:
-    result = await ctx.service.save_link(ctx.user.id, body.url, body.title)
+async def save_link(ctx: Ctx, body: SaveIn, response: Response) -> ItemDetail:
+    result = await ctx.service.save_link(
+        ctx.user.id, body.url, body.title, note=body.note, queue=body.queue
+    )
     response.status_code = 201 if result.created else 200
     return ItemDetail.of(result.item)
 
@@ -127,7 +130,13 @@ async def save_link(ctx: Ctx, body: LinkIn, response: Response) -> ItemDetail:
 @router.patch("/items/{item_id}", response_model_by_alias=True)
 async def update_item(ctx: Ctx, item_id: int, body: ItemPatch) -> ItemDetail:
     updated = await ctx.service.update(
-        ctx.user.id, item_id, saved=body.saved, archived=body.archived, tags=body.tags
+        ctx.user.id,
+        item_id,
+        saved=body.saved,
+        trying=body.trying,
+        archived=body.archived,
+        tags=body.tags,
+        note=body.note,
     )
     return ItemDetail.of(updated)
 

@@ -77,7 +77,7 @@ async def test_reading_workflow(client):
     assert r.json()["tags"] == ["ideas"] and r.json()["archived"]
 
     lib = (await client.get("/api/library")).json()
-    assert lib["counts"] == {"inbox": 1, "saved": 0, "archive": 1}
+    assert lib["counts"] == {"inbox": 1, "saved": 0, "try": 0, "archive": 1}
     assert lib["tags"] == ["ideas"] and lib["user"] == {
         "name": "Local reader",
         "can_sign_out": False,
@@ -86,6 +86,20 @@ async def test_reading_workflow(client):
         await client.get("/api/items", params={"view": "tag", "tag": "ideas"})
     ).json()
     assert [i["id"] for i in tagged["items"]] == [saved_id]
+
+    r = await client.post(
+        "/api/items", json={"queue": "try", "title": "omnigent", "note": "why: agents"}
+    )
+    assert r.status_code == 201, r.text
+    thing = r.json()
+    assert thing["url"] is None and thing["kind"] == "thing" and thing["trying"]
+    r = await client.patch(f"/api/items/{thing['id']}", json={"note": "edited"})
+    assert r.json()["note"] == "edited"
+    tries = (await client.get("/api/items?view=try")).json()["items"]
+    assert [i["title"] for i in tries] == ["omnigent"]
+    assert (await client.get("/api/library")).json()["counts"]["try"] == 1
+    r = await client.post("/api/items", json={"queue": "try"})
+    assert r.status_code == 400
 
     refreshed = (await client.post("/api/feeds/refresh", json={})).json()
     assert refreshed["feeds"][0]["error"] is None

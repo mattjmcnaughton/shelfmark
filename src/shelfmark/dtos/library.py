@@ -1,6 +1,7 @@
 """API request and response models, kept separate from the database models."""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -33,6 +34,7 @@ class FeedOut(BaseModel):
 class Counts(BaseModel):
     inbox: int
     saved: int
+    try_: int = Field(alias="try")
     archive: int
 
 
@@ -50,7 +52,7 @@ class Block(BaseModel):
 
 class ItemSummary(BaseModel):
     id: int
-    url: str
+    url: str | None
     kind: str
     title: str
     source: str
@@ -59,7 +61,9 @@ class ItemSummary(BaseModel):
     video_id: str | None
     published_at: datetime
     saved: bool
+    trying: bool
     archived: bool
+    note: str
     tags: list[str]
     feed_ids: list[int]
     copy_: str = Field(serialization_alias="copy")
@@ -77,7 +81,9 @@ class ItemSummary(BaseModel):
             "video_id": item.video_id,
             "published_at": item.published_at,
             "saved": item.saved_at is not None,
+            "trying": item.try_at is not None,
             "archived": item.archived_at is not None,
+            "note": item.note,
             "tags": [t.name for t in item.tags],
             "feed_ids": sorted(f.id for f in item.feeds),
             "copy_": item.copy,
@@ -115,7 +121,16 @@ class LinkIn(BaseModel):
     title: str = Field("", max_length=400)
 
 
+class SaveIn(BaseModel):
+    url: str = Field("", max_length=2048)
+    title: str = Field("", max_length=400)
+    note: str = Field("", max_length=2000)
+    queue: Literal["saved", "try"] = "saved"
+
+
 class ItemPatch(BaseModel):
     saved: bool | None = None
+    trying: bool | None = None
     archived: bool | None = None
     tags: list[str] | None = Field(None, max_length=50)
+    note: str | None = Field(None, max_length=2000)
