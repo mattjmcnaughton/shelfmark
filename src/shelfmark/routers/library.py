@@ -3,6 +3,7 @@
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Annotated, Literal
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import JSONResponse
@@ -54,7 +55,13 @@ def check_same_site(request: Request) -> None:
     if request.headers.get("sec-fetch-site") == "cross-site":
         raise ApiError(403, "Use a same-site request.")
     origin = request.headers.get("origin")
-    if origin and origin != f"{request.url.scheme}://{request.url.netloc}":
+    # Behind a TLS-terminating proxy that sends no X-Forwarded-Proto (the Amp Box
+    # router), the request looks like plain http, so also accept the public origin.
+    public = urlsplit(request.app.state.settings.deployment_url)
+    allowed = {f"{request.url.scheme}://{request.url.netloc}"}
+    if public.scheme and public.netloc:
+        allowed.add(f"{public.scheme}://{public.netloc}")
+    if origin and origin not in allowed:
         raise ApiError(403, "Use a same-site request.")
     if not request.headers.get("content-type", "").startswith("application/json"):
         raise ApiError(415, "Send JSON.")

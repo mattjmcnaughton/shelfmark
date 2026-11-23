@@ -127,6 +127,39 @@ async def test_rejects_bad_input_and_cross_site_writes(client):
     assert r.status_code == 415
 
 
+async def test_same_site_writes_behind_tls_proxy(make_database_url):
+    # The Box router terminates TLS and forwards plain http with no
+    # X-Forwarded-Proto; the browser's Origin is still the public https URL.
+    url = make_database_url()
+    migrate(url)
+    app = create_app(
+        Settings(
+            _env_file=None, env="development", deployment_url="https://shelf.test/"
+        ),
+        database=Database(url),
+        fetcher=FakeFetcher({"https://news.example.org/a": ARTICLE}),
+        auth=LocalAuth(),
+        clock=FakeClock(),
+        background_refresh=False,
+        serve_frontend=False,
+    )
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://shelf.test"
+        ) as c,
+    ):
+        body = {"url": "https://news.example.org/a"}
+        r = await c.post(
+            "/api/items", json=body, headers={"Origin": "https://shelf.test"}
+        )
+        assert r.status_code == 201, r.text
+        r = await c.post(
+            "/api/items", json=body, headers={"Origin": "https://evil.example"}
+        )
+        assert r.status_code == 403
+
+
 async def test_security_headers_and_health(client):
     r = await client.get("/healthz")
     assert r.status_code == 200
