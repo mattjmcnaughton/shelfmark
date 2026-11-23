@@ -20,6 +20,8 @@ from shelfmark.dtos.library import (
     LibraryOut,
     LinkIn,
     SaveIn,
+    SettingsOut,
+    SettingsPatch,
     UserOut,
 )
 from shelfmark.models import User
@@ -166,4 +168,16 @@ async def follow(ctx: Ctx, body: LinkIn) -> FeedOut:
 async def refresh(ctx: Ctx) -> FeedList:
     return FeedList(
         feeds=[FeedOut.of(f) for f in await ctx.service.refresh_user(ctx.user.id)]
+    )
+
+
+@router.get("/settings")
+async def settings(ctx: Ctx) -> SettingsOut:
+    return SettingsOut.of(await ctx.service.settings(ctx.user.id))
+
+
+@router.patch("/settings")
+async def update_settings(ctx: Ctx, body: SettingsPatch) -> SettingsOut:
+    return SettingsOut.of(
+        await ctx.service.update_settings(ctx.user.id, feed_backfill=body.feed_backfill)
     )

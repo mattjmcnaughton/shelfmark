@@ -325,6 +325,46 @@ def dated(n: int) -> tuple[str, str, str, str]:
     )
 
 
+async def test_following_imports_only_the_latest_posts_from_the_setting(database):
+    # Out of date order, so taking the first entries would pick the wrong ones.
+    fetcher = FakeFetcher({FEED: rss("B", *(dated(n) for n in (3, 5, 1, 4, 2)))})
+    clock = FakeClock()
+    svc, uid, session = await service(database, fetcher, clock)
+    assert (await svc.settings(uid)).feed_backfill == 3
+
+    feed = await svc.follow(uid, FEED)
+    assert await titles(svc, uid, "inbox") == ["Post 5", "Post 4", "Post 3"]
+
+    # A refresh imports new posts, never the older ones skipped at follow time.
+    fetcher.pages[FEED] = rss("B", *(dated(n) for n in (6, 5, 4, 3, 2, 1)))
+    clock.advance(minutes=20)
+    await svc.refresh_feed(feed)
+    assert await titles(svc, uid, "feed", feed_id=feed.id) == [
+        "Post 6",
+        "Post 5",
+        "Post 4",
+        "Post 3",
+    ]
+
+    # The setting is per user and stored; 0 follows from the next new post on.
+    with pytest.raises(LibraryError, match="0 to 60"):
+        await svc.update_settings(uid, feed_backfill=61)
+    await svc.update_settings(uid, feed_backfill=0)
+    assert (await svc.settings(uid)).feed_backfill == 0
+    second = "https://other.example.com/feed"
+    fetcher.pages[second] = rss("Other", ("Old", "https://other.example.com/o", "", ""))
+    other = await svc.follow(uid, second)
+    assert await titles(svc, uid, "feed", feed_id=other.id) == []
+    fetcher.pages[second] = rss(
+        "Other",
+        ("New", "https://other.example.com/n", "", ""),
+        ("Old", "https://other.example.com/o", "", ""),
+    )
+    await svc.refresh_feed(other)
+    assert await titles(svc, uid, "feed", feed_id=other.id) == ["New"]
+    await session.close()
+
+
 async def test_summary_only_feed_entries_fetch_the_full_article(database):
     long_post = "<p>" + "Every word of the post is in the feed. " * 30 + "</p>"
     fetcher = FakeFetcher(

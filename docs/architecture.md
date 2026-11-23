@@ -59,8 +59,9 @@ The frontend is scaffolded separately into `src/shelfmark/web/frontend/` using t
   and tags; never read as articles and never promoted from the Inbox),
   Archive/restore (restore returns a saved item to Saved), tags, saving links
   (article extraction with link-only fallback, YouTube as one canonical video item),
-  and following/refreshing feeds (RSS/Atom, sites that advertise a
-  feed; summary-only entries fetch their full article).
+  per-user settings, and following/refreshing feeds (RSS/Atom, sites that advertise a
+  feed; only the latest `feed_backfill` posts import
+  at follow time; summary-only entries fetch their full article).
   `services/refresher` refreshes all users' feeds every `SHELFMARK_REFRESH_MINUTES`.
 - **Persistence.** `models` (SQLAlchemy 2, portable types, named constraints, UTC
   timestamps), `repositories/library` (portable Core/ORM queries only), Alembic

@@ -15,6 +15,11 @@ export type Library = {
   counts: { inbox: number; saved: number; try: number; archive: number };
 };
 
+export type Settings = {
+  /** How many of a newly followed feed's latest posts to import. */
+  feed_backfill: number;
+};
+
 export type ItemSummary = {
   id: number;
   /** `null` for a thing to try that has no link. */

@@ -4,6 +4,7 @@ import {
   type ItemDetail,
   type ItemSummary,
   type Library,
+  type Settings,
   type View,
   api,
   itemsPath,
@@ -14,6 +15,7 @@ export const keys = {
   items: ["items"] as const,
   view: (view: View) => ["items", view] as const,
   item: (id: number) => ["item", id] as const,
+  settings: ["settings"] as const,
 };
 
 // Retry network and server hiccups, but not client, auth, or "not configured" (503) errors.
@@ -42,6 +44,15 @@ export function useItem(id: number | undefined) {
     queryKey: keys.item(id ?? -1),
     queryFn: () => api<ItemDetail>(`/api/items/${id}`),
     enabled: id !== undefined,
+    retry,
+  });
+}
+
+export function useSettings(enabled: boolean) {
+  return useQuery({
+    queryKey: keys.settings,
+    queryFn: () => api<Settings>("/api/settings"),
+    enabled,
     retry,
   });
 }

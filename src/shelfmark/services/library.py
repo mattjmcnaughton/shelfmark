@@ -1,4 +1,4 @@
-"""Library business logic: saving links, things to try, feeds, triage.
+"""Library business logic: saving links, things to try, feeds, triage, settings.
 
 The service receives its collaborators (a repository, a fetcher, and a clock) from
 the caller, so tests use a real SQLite repository with a fake fetcher and clock.
@@ -13,7 +13,7 @@ from urllib.parse import urlencode, urlsplit
 import structlog
 
 from shelfmark.clients.fetcher import BlockedURLError, Fetcher, FetchError
-from shelfmark.models import Feed, Item
+from shelfmark.models import Feed, Item, UserSettings
 from shelfmark.repositories.library import LibraryRepository
 from shelfmark.services.content import (
     Article,
@@ -23,6 +23,7 @@ from shelfmark.services.content import (
     word_count,
 )
 from shelfmark.services.feeds import (
+    MAX_ENTRIES,
     FeedEntry,
     FeedFormatError,
     ParsedFeed,
@@ -301,10 +302,31 @@ class LibraryService:
             else ""
         )
 
+    # Settings
+
+    async def settings(self, user_id: int) -> UserSettings:
+        return await self.repo.settings(user_id)
+
+    async def update_settings(
+        self, user_id: int, *, feed_backfill: int | None = None
+    ) -> UserSettings:
+        settings = await self.repo.settings(user_id)
+        if feed_backfill is not None:
+            if not 0 <= feed_backfill <= MAX_ENTRIES:
+                raise LibraryError(f"Choose from 0 to {MAX_ENTRIES} posts.")
+            settings.feed_backfill = feed_backfill
+        await self.repo.save_settings(settings)
+        await self.repo.commit()
+        return settings
+
     # Feeds
 
     async def follow(self, user_id: int, raw_url: str, title: str = "") -> Feed:
-        """Follow a feed, or a web page that links to one."""
+        """Follow a feed, or a web page that links to one.
+
+        Only the latest posts (the user's ``feed_backfill`` setting) are imported;
+        the rest of what the feed lists now is remembered and never imported.
+        """
         url = _parse(raw_url)
         await self._check_not_following(user_id, url)
         parsed: ParsedFeed | None = None
@@ -330,7 +352,19 @@ class LibraryService:
                 created_at=now,
             )
         )
-        await self._import(feed, parsed.entries)
+        backfill = (await self.repo.settings(user_id)).feed_backfill
+        # Newest first; undated entries keep their feed order, after dated ones.
+        latest = sorted(
+            parsed.entries,
+            key=lambda e: e.published_at or datetime.min.replace(tzinfo=UTC),
+            reverse=True,
+        )
+        keep = latest[:backfill]
+        kept = {canonical_item_url(e.url) for e in keep}
+        await self.repo.skip_entries(
+            feed.id, {canonical_item_url(e.url) for e in latest} - kept
+        )
+        await self._import(feed, keep)
         await self.repo.commit()
         return feed
 
@@ -350,7 +384,11 @@ class LibraryService:
         except LibraryError as error:
             feed.error = str(error)[:300]
         else:
-            await self._import(feed, parsed.entries)
+            skipped = await self.repo.skipped_entries(feed.id)
+            await self._import(
+                feed,
+                [e for e in parsed.entries if canonical_item_url(e.url) not in skipped],
+            )
             feed.error = None
         feed.checked_at = self.clock()
         await self.repo.commit()

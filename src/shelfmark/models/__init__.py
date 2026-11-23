@@ -13,6 +13,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     MetaData,
     String,
     Table,
@@ -29,6 +30,7 @@ NAMING_CONVENTION = {
     "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
     "pk": "pk_%(table_name)s",
 }
+DEFAULT_FEED_BACKFILL = 3
 
 
 class Base(DeclarativeBase):
@@ -116,6 +118,31 @@ class Tag(Base):
     name: Mapped[str] = mapped_column(String(50))
 
 
+class UserSettings(Base):
+    """One row per user who changed a setting; absent rows mean the defaults."""
+
+    __tablename__ = "user_settings"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    # How many of a newly followed feed's latest entries to import.
+    feed_backfill: Mapped[int] = mapped_column(
+        Integer,
+        default=DEFAULT_FEED_BACKFILL,
+        server_default=str(DEFAULT_FEED_BACKFILL),
+    )
+
+
+# Entries a feed already listed when it was followed but that were not imported
+# (beyond the backfill), so later refreshes do not import them either.
+feed_skipped_entries = Table(
+    "feed_skipped_entries",
+    Base.metadata,
+    Column("feed_id", ForeignKey("feeds.id", ondelete="CASCADE"), primary_key=True),
+    Column("url", String(2048), primary_key=True),
+)
+
 # Reading items (articles, videos) are one per URL. Things to try live apart from
 # them, so a repo can be both a saved article and a thing to try.
 NOT_THING = text("kind <> 'thing'")
@@ -174,6 +201,8 @@ __all__ = [
     "Item",
     "Tag",
     "User",
+    "UserSettings",
     "feed_entries",
+    "feed_skipped_entries",
     "item_tags",
 ]

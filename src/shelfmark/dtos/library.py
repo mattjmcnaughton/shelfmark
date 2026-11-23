@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from shelfmark.models import Feed, Item
+from shelfmark.models import Feed, Item, UserSettings
 
 
 class UserOut(BaseModel):
@@ -136,3 +136,15 @@ class ItemPatch(BaseModel):
     archived: bool | None = None
     tags: list[str] | None = Field(None, max_length=50)
     note: str | None = Field(None, max_length=2000)
+
+
+class SettingsOut(BaseModel):
+    feed_backfill: int
+
+    @classmethod
+    def of(cls, settings: UserSettings) -> "SettingsOut":
+        return cls(feed_backfill=settings.feed_backfill)
+
+
+class SettingsPatch(BaseModel):
+    feed_backfill: int | None = None

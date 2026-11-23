@@ -90,13 +90,25 @@ to To try, a saved item to Saved, and anything else to the Inbox. Lists are newe
 
 | Method | Path | Body | Result |
 | ------ | ---- | ---- | ------ |
-| POST | `/api/feeds` | `{"url": "…", "title": "optional"}` | 201 feed; fetches and imports recent entries. 409 when already followed. |
+| POST | `/api/feeds` | `{"url": "…", "title": "optional"}` | 201 feed; imports the latest `feed_backfill` entries. 409 when already followed. |
 | POST | `/api/feeds/refresh` | `{}` | `{"feeds": [feed…]}`; per-feed failures are in each feed's `error`. |
 
 `url` may be an RSS or Atom feed, or a web page that advertises one with
-`<link rel="alternate">`. A feed entry that has
+`<link rel="alternate">`. Following imports only the newest
+`feed_backfill` entries; the older entries the feed lists at that moment are
+remembered and never imported, while every later entry is. A feed entry that has
 only a short summary gets its full article fetched and extracted; if that fails,
 the summary is kept.
 
 The server also refreshes every user's feeds in the background
 (`SHELFMARK_REFRESH_MINUTES`, default 20; 0 disables).
+
+## Settings
+
+| Method | Path | Body | Result |
+| ------ | ---- | ---- | ------ |
+| GET | `/api/settings` | | `{"feed_backfill": 3}` |
+| PATCH | `/api/settings` | `{"feed_backfill": 0..60}` | settings; 400 outside the range |
+
+Settings are stored per user. `feed_backfill` (default 3) is how many of a newly
+followed feed's latest entries to import.

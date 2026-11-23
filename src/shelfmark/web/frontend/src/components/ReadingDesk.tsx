@@ -16,17 +16,19 @@ import {
   Plus,
   RefreshCw,
   Rss,
+  Settings as SettingsIcon,
   Shrink,
   Tag as TagIcon,
 } from "lucide-react";
 import { type FormEvent, Fragment, useEffect, useRef, useState } from "react";
-import { keys, useItem, useItems, useLibrary } from "../hooks/useDeskQueries";
+import { keys, useItem, useItems, useLibrary, useSettings } from "../hooks/useDeskQueries";
 import {
   ApiError,
   type Feed,
   type ItemDetail,
   type ItemPatch,
   type ItemSummary,
+  type Settings,
   type View,
   api,
 } from "../lib/api";
@@ -41,9 +43,11 @@ type Modal =
   | "Add subscription"
   | "Edit tags"
   | "Edit note"
+  | "Settings"
   | "Keyboard shortcuts";
 
 const NOTE_MAX = 2000;
+const BACKFILL_MAX = 60;
 
 const LIBRARY_VIEWS = [
   { kind: "inbox", label: "Inbox", Icon: Inbox },
@@ -96,6 +100,8 @@ export function ReadingDesk() {
   const item = list.find((x) => x.id === selectedId) ?? list[0];
   const pos = item ? list.indexOf(item) : -1;
   const detail = useItem(item?.id);
+  const settings = useSettings(library.isSuccess);
+  const backfill = settings.data?.feed_backfill;
 
   const dlg = useRef<HTMLDialogElement>(null);
   const reader = useRef<HTMLElement>(null);
@@ -246,6 +252,7 @@ export function ReadingDesk() {
     const note = String(data.get("note") ?? "").trim();
     const description = String(data.get("description") ?? "").trim();
     const labels = splitTags(String(data.get("tags") ?? ""));
+    const count = Number(data.get("feed_backfill"));
     const kind = modal;
     const target = item;
     setFormError("");
@@ -254,6 +261,11 @@ export function ReadingDesk() {
       return;
     }
     const ok = await run(async () => {
+      if (kind === "Settings") {
+        const saved = await api<Settings>("/api/settings", "PATCH", { feed_backfill: count });
+        queryClient.setQueryData(keys.settings, saved);
+        return "Settings saved";
+      }
       if (kind === "Edit note") {
         if (!target) return;
         await patch(target, { note });
@@ -428,6 +440,15 @@ export function ReadingDesk() {
         </div>
         <div className="navfoot">
           <span className="light" /> <span className="who">{user?.name}</span>
+          <button
+            type="button"
+            className="signout"
+            aria-label="Settings"
+            title="Settings"
+            onClick={() => open("Settings")}
+          >
+            <SettingsIcon size={15} />
+          </button>
           {user?.can_sign_out && <SignOutForm />}
         </div>
       </nav>
@@ -697,6 +718,29 @@ export function ReadingDesk() {
                       />
                     </label>
                   </>
+                ) : modal === "Settings" ? (
+                  <>
+                    <p>Saved to your account and used on every device.</p>
+                    {settings.isPending ? (
+                      <p>Loading your settings…</p>
+                    ) : (
+                      <label>
+                        Posts to import when you follow a feed
+                        <input
+                          name="feed_backfill"
+                          type="number"
+                          required
+                          min={0}
+                          max={BACKFILL_MAX}
+                          defaultValue={backfill ?? 3}
+                        />
+                      </label>
+                    )}
+                    <p>
+                      Following a feed brings in only its latest posts, not its whole history. After
+                      that, every new post arrives in the Inbox.
+                    </p>
+                  </>
                 ) : modal === "Add something to try" ? (
                   <>
                     <p>
@@ -729,7 +773,7 @@ export function ReadingDesk() {
                     <p>
                       {modal === "Save a link"
                         ? "Save an article or YouTube link. Shelfmark will try to extract a clean copy of the article."
-                        : `Paste an RSS or Atom feed URL or a site's address. Shelfmark imports its recent posts.`}
+                        : `Paste an RSS or Atom feed URL or a site's address. Shelfmark imports its latest ${backfill ?? 3} ${backfill === 1 ? "post" : "posts"} (change this in Settings).`}
                     </p>
                     <label>
                       {modal === "Save a link" ? "Link URL" : "Feed or site URL"}
@@ -753,11 +797,13 @@ export function ReadingDesk() {
                         ? "Save tags"
                         : modal === "Edit note"
                           ? "Save note"
-                          : modal === "Add something to try"
-                            ? "Add to To try"
-                            : modal === "Save a link"
-                              ? "Save link"
-                              : "Add feed"}
+                          : modal === "Settings"
+                            ? "Save settings"
+                            : modal === "Add something to try"
+                              ? "Add to To try"
+                              : modal === "Save a link"
+                                ? "Save link"
+                                : "Add feed"}
                   </button>
                 </div>
               </>

@@ -16,7 +16,7 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
 /** An in-memory Shelfmark server implementing the parts of docs/api.md the desk uses. */
-function fakeServer(items: ItemSummary[]) {
+function fakeServer(items: ItemSummary[], settings = { feed_backfill: 3 }) {
   const thing = (x: ItemSummary) => x.kind === "thing";
   const inView = (x: ItemSummary, view: string | null) =>
     view === "inbox"
@@ -44,6 +44,10 @@ function fakeServer(items: ItemSummary[]) {
           archive: count("archive"),
         },
       });
+    }
+    if (url.pathname === "/api/settings") {
+      if (method === "PATCH") Object.assign(settings, JSON.parse(String(init?.body)));
+      return json(settings);
     }
     if (url.pathname === "/api/items" && method === "POST") {
       const { queue, url: link, title, note, description, tags } = JSON.parse(String(init?.body));
@@ -163,6 +167,24 @@ test("pressing I adds a named thing with labels and a note to To try", async () 
   expect(document.querySelector(".sheet .tags")?.textContent).toContain("Agents  /  cli");
   // A thing to try cannot be saved as reading.
   expect(screen.queryByRole("button", { name: "Save item" })).toBeNull();
+});
+
+test("the Settings dialog stores how many posts a new feed imports", async () => {
+  const settings = { feed_backfill: 3 };
+  renderDesk(fakeServer([article(1, "A post")], settings));
+  await screen.findByText("Body of A post");
+
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  const dialog = await screen.findByRole("dialog", { name: "Settings" });
+  const field = await within(dialog).findByLabelText("Posts to import when you follow a feed");
+  expect((field as HTMLInputElement).value).toBe("3");
+  fireEvent.change(field, { target: { value: "5" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save settings" }));
+
+  await waitFor(() => expect(settings.feed_backfill).toBe(5));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  fireEvent.click(screen.getByRole("button", { name: "Add subscription" }));
+  expect(await screen.findByText(/imports its latest 5 posts/)).toBeTruthy();
 });
 
 test("an unauthenticated visitor is asked to sign in", async () => {

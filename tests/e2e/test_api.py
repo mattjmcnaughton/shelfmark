@@ -113,6 +113,16 @@ async def test_reading_workflow(client):
     assert refreshed["feeds"][0]["error"] is None
 
 
+async def test_settings_are_stored_per_user(client):
+    assert (await client.get("/api/settings")).json() == {"feed_backfill": 3}
+    r = await client.patch("/api/settings", json={"feed_backfill": 10})
+    assert r.json() == {"feed_backfill": 10}
+    assert (await client.get("/api/settings")).json() == {"feed_backfill": 10}
+    r = await client.patch("/api/settings", json={"feed_backfill": -1})
+    assert r.status_code == 400
+    assert (await client.get("/api/settings")).json() == {"feed_backfill": 10}
+
+
 async def test_rejects_bad_input_and_cross_site_writes(client):
     r = await client.post("/api/items", json={"url": "javascript:alert(1)"})
     assert r.status_code == 400 and "HTTP" in r.json()["detail"]

@@ -1,4 +1,4 @@
-"""Data access for users, feeds, items, and tags.
+"""Data access for users, settings, feeds, items, and tags.
 
 Queries use only portable SQLAlchemy Core/ORM constructs (no SQLite JSON functions,
 no ``INSERT OR IGNORE``), so the same code runs on Postgres.
@@ -11,11 +11,14 @@ from sqlalchemy import and_, delete, exists, func, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shelfmark.models import (
+    DEFAULT_FEED_BACKFILL,
     Feed,
     Item,
     Tag,
     User,
+    UserSettings,
     feed_entries,
+    feed_skipped_entries,
     item_tags,
 )
 
@@ -53,6 +56,17 @@ class LibraryRepository:
 
     async def all_user_ids(self) -> Sequence[int]:
         return (await self.session.scalars(select(User.id))).all()
+
+    async def settings(self, user_id: int) -> UserSettings:
+        """The user's settings; a new, unsaved row of defaults if they changed none."""
+        found = await self.session.get(UserSettings, user_id)
+        return found or UserSettings(
+            user_id=user_id, feed_backfill=DEFAULT_FEED_BACKFILL
+        )
+
+    async def save_settings(self, settings: UserSettings) -> None:
+        self.session.add(settings)
+        await self.session.flush()
 
     # Feeds
 
@@ -92,6 +106,24 @@ class LibraryRepository:
             await self.session.execute(
                 insert(feed_entries).values(feed_id=feed_id, item_id=item_id)
             )
+
+    async def skip_entries(self, feed_id: int, urls: set[str]) -> None:
+        if urls:
+            await self.session.execute(
+                insert(feed_skipped_entries),
+                [{"feed_id": feed_id, "url": url} for url in sorted(urls)],
+            )
+
+    async def skipped_entries(self, feed_id: int) -> set[str]:
+        return set(
+            (
+                await self.session.scalars(
+                    select(feed_skipped_entries.c.url).where(
+                        feed_skipped_entries.c.feed_id == feed_id
+                    )
+                )
+            ).all()
+        )
 
     # Items
 
