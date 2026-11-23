@@ -314,3 +314,78 @@ async def test_to_try_holds_things_apart_from_reading_items(database):
     # Adding a tried thing's link again brings it back to To try.
     assert (await svc.add_thing(uid, "", repo_url)).item.archived_at is None
     await session.close()
+
+
+def dated(n: int) -> tuple[str, str, str, str]:
+    return (
+        f"Post {n}",
+        f"https://blog.example.com/{n}",
+        f"{n:02d} Nov 2026 09:00:00 GMT",
+        f"<p>Teaser {n}</p>",
+    )
+
+
+async def test_summary_only_feed_entries_fetch_the_full_article(database):
+    long_post = "<p>" + "Every word of the post is in the feed. " * 30 + "</p>"
+    fetcher = FakeFetcher(
+        {
+            FEED: rss(
+                "B",
+                (
+                    "Teaser",
+                    "https://blog.example.com/full",
+                    "Fri, 20 Nov 2026 09:00:00 GMT",
+                    "<p>A short summary.</p>",
+                ),
+                (
+                    "Unreachable",
+                    "https://blog.example.com/gone",
+                    "Thu, 19 Nov 2026 09:00:00 GMT",
+                    "<p>Only the summary.</p>",
+                ),
+                (
+                    "Whole",
+                    "https://blog.example.com/whole",
+                    "Wed, 18 Nov 2026 09:00:00 GMT",
+                    long_post,
+                ),
+            ),
+            "https://blog.example.com/full": ARTICLE,
+        }
+    )
+    svc, uid, session = await service(database, fetcher, FakeClock())
+    await svc.follow(uid, FEED)
+    by_title = {i.title: i for i in await svc.items(uid, "inbox", None, None)}
+
+    teaser = by_title["Teaser"]
+    assert teaser.copy == "extracted" and teaser.deck == "A short summary."
+    assert "attention compounds" in " ".join(str(b["text"]) for b in teaser.body)
+    assert teaser.author == "Ada Lovelace"
+    # When the article cannot be fetched, the feed's summary is still there.
+    gone = by_title["Unreachable"]
+    assert gone.copy == "feed"
+    assert gone.body == [{"text": "Only the summary.", "heading": False}]
+    # An entry whose feed carries the whole post is not fetched again.
+    assert by_title["Whole"].copy == "feed"
+    assert "https://blog.example.com/whole" not in fetcher.fetched
+    await session.close()
+
+
+async def test_following_a_site_page_finds_its_feed(database):
+    home = (
+        '<!doctype html><html><head><link rel="alternate" '
+        'type="application/rss+xml" href="/feed"></head><body>Hi</body></html>'
+    )
+    fetcher = FakeFetcher(
+        {
+            "https://blog.example.com/": home,
+            "https://blog.example.com/feed": rss("Blog", dated(1)),
+        }
+    )
+    svc, uid, session = await service(database, fetcher, FakeClock())
+    feed = await svc.follow(uid, "https://blog.example.com")
+    assert feed.url == "https://blog.example.com/feed" and feed.title == "Blog"
+    fetcher.pages["https://plain.example.com/"] = "<!doctype html><p>No feed</p>"
+    with pytest.raises(LibraryError, match="valid RSS or Atom"):
+        await svc.follow(uid, "https://plain.example.com/")
+    await session.close()

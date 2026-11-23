@@ -59,7 +59,8 @@ description in `deck`, a note, and tags. Things are link aggregation, not readin
 their link is never extracted as an article, and they are separate from reading
 items, so the same URL can be both a saved article and a thing to try. `video_id` is an
 11-character YouTube ID for videos. `copy` says where the reading text came from:
-`feed` (feed entry content), `extracted` (clean article extraction), `link`
+`feed` (feed entry content), `extracted` (clean article extraction, also used for
+feed entries that carry only a summary), `link`
 (nothing readable; show the original-link fallback), or `none` (no link at all).
 `note` is the user's own plain-text note, such as why something is worth trying.
 An **item detail** adds `body`, a list of plain-text blocks
@@ -91,6 +92,11 @@ to To try, a saved item to Saved, and anything else to the Inbox. Lists are newe
 | ------ | ---- | ---- | ------ |
 | POST | `/api/feeds` | `{"url": "…", "title": "optional"}` | 201 feed; fetches and imports recent entries. 409 when already followed. |
 | POST | `/api/feeds/refresh` | `{}` | `{"feeds": [feed…]}`; per-feed failures are in each feed's `error`. |
+
+`url` may be an RSS or Atom feed, or a web page that advertises one with
+`<link rel="alternate">`. A feed entry that has
+only a short summary gets its full article fetched and extracted; if that fails,
+the summary is kept.
 
 The server also refreshes every user's feeds in the background
 (`SHELFMARK_REFRESH_MINUTES`, default 20; 0 disables).

@@ -15,8 +15,20 @@ import structlog
 from shelfmark.clients.fetcher import BlockedURLError, Fetcher, FetchError
 from shelfmark.models import Feed, Item
 from shelfmark.repositories.library import LibraryRepository
-from shelfmark.services.content import Article, extract_article, plain_text
-from shelfmark.services.feeds import FeedFormatError, parse_feed
+from shelfmark.services.content import (
+    Article,
+    extract_article,
+    plain_text,
+    shorten,
+    word_count,
+)
+from shelfmark.services.feeds import (
+    FeedEntry,
+    FeedFormatError,
+    ParsedFeed,
+    discover_feed_url,
+    parse_feed,
+)
 from shelfmark.services.urls import (
     WebURLError,
     canonical_item_url,
@@ -292,10 +304,21 @@ class LibraryService:
     # Feeds
 
     async def follow(self, user_id: int, raw_url: str, title: str = "") -> Feed:
+        """Follow a feed, or a web page that links to one."""
         url = _parse(raw_url)
-        if await self.repo.feed_by_url(user_id, url):
-            raise ConflictError("You already follow this feed.")
-        parsed = await self._fetch_feed(url)
+        await self._check_not_following(user_id, url)
+        parsed: ParsedFeed | None = None
+        page = await self._fetch(url)
+        try:
+            parsed = parse_feed(page.text, page.url)
+        except FeedFormatError as error:
+            found = discover_feed_url(page.text, page.url)
+            if not found:
+                raise LibraryError(str(error)) from error
+            url = found
+        if parsed is None:
+            await self._check_not_following(user_id, url)
+            parsed = await self._fetch_feed(url)
         now = self.clock()
         feed = await self.repo.add_feed(
             Feed(
@@ -310,6 +333,10 @@ class LibraryService:
         await self._import(feed, parsed.entries)
         await self.repo.commit()
         return feed
+
+    async def _check_not_following(self, user_id: int, url: str) -> None:
+        if await self.repo.feed_by_url(user_id, url):
+            raise ConflictError("You already follow this feed.")
 
     async def refresh_user(self, user_id: int) -> list[Feed]:
         feeds = list(await self.repo.feeds(user_id))
@@ -328,37 +355,58 @@ class LibraryService:
         feed.checked_at = self.clock()
         await self.repo.commit()
 
-    async def _fetch_feed(self, url: str):
+    async def _fetch(self, url: str):
         try:
-            page = await self.fetcher.fetch(url)
-            return parse_feed(page.text, page.url)
-        except (FetchError, FeedFormatError) as error:
+            return await self.fetcher.fetch(url)
+        except FetchError as error:
             raise LibraryError(str(error)) from error
 
-    async def _import(self, feed: Feed, entries) -> None:
+    async def _fetch_feed(self, url: str) -> ParsedFeed:
+        page = await self._fetch(url)
+        try:
+            return parse_feed(page.text, page.url)
+        except FeedFormatError as error:
+            raise LibraryError(str(error)) from error
+
+    async def _import(self, feed: Feed, entries: list[FeedEntry]) -> None:
         now = self.clock()
         for entry in entries:
             key = canonical_item_url(entry.url)
             item = await self.repo.item_by_url(feed.user_id, key)
             if item is None:
                 video = youtube_video_id(entry.url)
-                item = await self.repo.add_item(
-                    Item(
-                        user_id=feed.user_id,
-                        url=key,
-                        kind="video" if video else "article",
-                        title=entry.title or site_name(entry.url),
-                        source=feed.title,
-                        author=entry.author,
-                        deck="",
-                        body=[] if video else entry.blocks,
-                        copy="feed" if entry.blocks and not video else "link",
-                        video_id=video,
-                        published_at=entry.published_at or now,
-                        created_at=now,
-                    )
+                item = Item(
+                    user_id=feed.user_id,
+                    url=key,
+                    kind="video" if video else "article",
+                    title=entry.title or site_name(entry.url),
+                    source=feed.title,
+                    author=entry.author,
+                    deck="",
+                    body=[] if video else entry.blocks,
+                    copy="feed" if entry.blocks and not video else "link",
+                    video_id=video,
+                    published_at=entry.published_at or now,
+                    created_at=now,
                 )
+                if entry.partial and not video:
+                    await self._read_full_text(item, entry)
+                item = await self.repo.add_item(item)
             await self.repo.link_entry(feed.id, item.id)
+
+    async def _read_full_text(self, item: Item, entry: FeedEntry) -> None:
+        """Replace a feed's teaser with the linked article when it reads as more."""
+        try:
+            article = await self._read_page(entry.url)
+        except LibraryError:
+            return
+        if article is None or word_count(article.blocks) <= word_count(entry.blocks):
+            return
+        item.body = article.blocks
+        item.copy = "extracted"
+        item.author = item.author or article.author
+        teaser = " ".join(str(b["text"]) for b in entry.blocks)
+        item.deck = shorten(teaser, 280) or article.deck
 
 
 def github_repo_name(url: str) -> str | None:

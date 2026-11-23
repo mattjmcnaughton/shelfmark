@@ -143,7 +143,7 @@ def extract_article(html: str) -> Article:
         return Article()
     blocks = html_to_blocks(summary)
     region = _main_region_blocks(html)
-    if _words(region) > 2 * _words(blocks):
+    if word_count(region) > 2 * word_count(blocks):
         # Readability sometimes keeps one section of a long page (e.g. Wikipedia).
         blocks = region
     author = _meta(html, "author")
@@ -151,7 +151,7 @@ def extract_article(html: str) -> Article:
     return Article(
         title=title[:400],
         author=author[:200],
-        deck=_shorten(deck, 280),
+        deck=shorten(deck, 280),
         blocks=blocks,
     )
 
@@ -187,7 +187,7 @@ def _main_region_blocks(html: str) -> list[Block]:
     return html_to_blocks(lxml.html.tostring(best, encoding="unicode"))
 
 
-def _words(blocks: list[Block]) -> int:
+def word_count(blocks: list[Block]) -> int:
     return sum(len(str(b["text"]).split()) for b in blocks)
 
 
@@ -210,7 +210,7 @@ def _meta(html: str, name: str) -> str:
     return ""
 
 
-def _shorten(text: str, limit: int) -> str:
+def shorten(text: str, limit: int) -> str:
     text = " ".join(text.split())
     if len(text) <= limit:
         return text

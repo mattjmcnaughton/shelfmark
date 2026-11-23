@@ -1,15 +1,22 @@
-"""RSS and Atom parsing into plain data."""
+"""RSS and Atom parsing into plain data, and feed discovery on web pages."""
 
 import calendar
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from urllib.parse import urljoin
 
 import feedparser
+import lxml.html
+from lxml import etree
 
-from shelfmark.services.content import Block, html_to_blocks, plain_text
+from shelfmark.services.content import Block, html_to_blocks, plain_text, word_count
 from shelfmark.services.urls import WebURLError, parse_web_url
 
 MAX_ENTRIES = 60
+# A feed entry without full content and with a summary shorter than this is a
+# teaser; the article itself is fetched from its link.
+FULL_TEXT_WORDS = 200
+FEED_TYPES = frozenset({"application/rss+xml", "application/atom+xml"})
 
 
 class FeedFormatError(ValueError):
@@ -24,6 +31,8 @@ class FeedEntry:
     author: str
     published_at: datetime | None
     blocks: list[Block] = field(default_factory=list)
+    # Only a summary: the full article is on the linked page.
+    partial: bool = False
 
 
 @dataclass(frozen=True)
@@ -45,10 +54,8 @@ def parse_feed(text: str, base_url: str) -> ParsedFeed:
             url = parse_web_url(link)
         except WebURLError:
             continue
-        html = ""
-        if entry.get("content"):
-            html = entry.content[0].get("value", "")
-        html = html or entry.get("summary", "")
+        content = entry.content[0].get("value", "") if entry.get("content") else ""
+        blocks = html_to_blocks(content or entry.get("summary", ""))
         when = entry.get("published_parsed") or entry.get("updated_parsed")
         entries.append(
             FeedEntry(
@@ -58,9 +65,28 @@ def parse_feed(text: str, base_url: str) -> ParsedFeed:
                 published_at=(
                     datetime.fromtimestamp(calendar.timegm(when), UTC) if when else None
                 ),
-                blocks=html_to_blocks(html),
+                blocks=blocks,
+                partial=not content and word_count(blocks) < FULL_TEXT_WORDS,
             )
         )
     return ParsedFeed(
         title=plain_text(parsed.feed.get("title", ""), 200), entries=entries
     )
+
+
+def discover_feed_url(html: str, base_url: str) -> str | None:
+    """The first RSS or Atom feed a page advertises in ``<link rel=alternate>``."""
+    try:
+        root = lxml.html.document_fromstring(html)
+    except (etree.ParserError, ValueError):
+        return None
+    for link in root.iter("link"):
+        rel = str(link.get("rel") or "").lower().split()
+        kind = str(link.get("type") or "").lower().split(";")[0].strip()
+        href = str(link.get("href") or "").strip()
+        if "alternate" in rel and kind in FEED_TYPES and href:
+            try:
+                return parse_web_url(urljoin(base_url, href))
+            except WebURLError:
+                continue
+    return None
