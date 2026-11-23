@@ -32,7 +32,8 @@ export function ItemSheet({
 }: Props) {
   const [player, setPlayer] = useState(false);
   const isVideo = item.kind === "video";
-  const hasLink = item.url !== null && item.kind !== "thing" && item.copy !== "none";
+  const isThing = item.kind === "thing";
+  const hasLink = item.url !== null && item.copy !== "none";
   const body = detail?.id === item.id ? detail.body : undefined;
   return (
     <div className="sheet">
@@ -41,9 +42,7 @@ export function ItemSheet({
           <i className={`spot ${spot}`} />
           {sourceLabel(item)}
         </span>
-        <span>
-          {isVideo ? "Video" : item.kind === "thing" ? "Thing to try" : COPY_LABEL[item.copy]}
-        </span>
+        <span>{isVideo ? "Video" : isThing ? "Thing to try" : COPY_LABEL[item.copy]}</span>
       </div>
       <h2>{item.title}</h2>
       {item.deck && <p className="deck">{item.deck}</p>}
@@ -57,8 +56,8 @@ export function ItemSheet({
         {dateLabel(item.published_at)}
       </div>
       {item.note.trim() && (
-        <section className="note" aria-label={item.trying ? "Why try it" : "Note"}>
-          <h3>{item.trying ? "Why try it" : "Note"}</h3>
+        <section className="note" aria-label={isThing ? "Why try it" : "Note"}>
+          <h3>{isThing ? "Why try it" : "Note"}</h3>
           <p>{item.note}</p>
         </section>
       )}
@@ -79,27 +78,28 @@ export function ItemSheet({
           </button>
         ))}
       <div className="prose">
-        {!isVideo &&
-          (!hasLink && !body?.length ? (
-            !item.note.trim() && <p>Just a reminder — no link saved.</p>
-          ) : item.copy === "link" || body?.length === 0 ? (
-            <p>No readable copy from this source. Your link is still saved here.</p>
-          ) : body ? (
-            body.map((block, i) =>
-              block.heading ? (
-                // biome-ignore lint/suspicious/noArrayIndexKey: body blocks are a static, ordered list
-                <h3 key={i}>{block.text}</h3>
-              ) : (
-                // biome-ignore lint/suspicious/noArrayIndexKey: body blocks are a static, ordered list
-                <p key={i}>{block.text}</p>
-              ),
-            )
-          ) : (
-            detailError && <p>{detailError}</p>
-          ))}
+        {isThing
+          ? !hasLink && !item.note.trim() && !item.deck && <p>Just a reminder — no link saved.</p>
+          : !isVideo &&
+            (item.copy === "link" || body?.length === 0 ? (
+              <p>No readable copy from this source. Your link is still saved here.</p>
+            ) : body ? (
+              body.map((block, i) =>
+                block.heading ? (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: body blocks are a static, ordered list
+                  <h3 key={i}>{block.text}</h3>
+                ) : (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: body blocks are a static, ordered list
+                  <p key={i}>{block.text}</p>
+                ),
+              )
+            ) : (
+              detailError && <p>{detailError}</p>
+            ))}
         {hasLink && item.url && (
           <a href={item.url} target="_blank" rel="noreferrer">
-            {isVideo ? "Open in YouTube" : "Open original"} <ArrowUpRight size={14} />
+            {isVideo ? "Open in YouTube" : isThing ? "Open link" : "Open original"}{" "}
+            <ArrowUpRight size={14} />
           </a>
         )}
       </div>

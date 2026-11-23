@@ -54,10 +54,12 @@ The frontend is scaffolded separately into `src/shelfmark/web/frontend/` using t
   fresh migrated database (SQLite, or Postgres in CI), `tests/fakes.FakeFetcher`, a `FakeClock`, and `LocalAuth` or
   `Auth0Auth` backed by a fake Auth0 tenant.
 - **Domain.** `services/library.LibraryService` owns triage: the feed Inbox
-  (not saved, not to try, unarchived), the deliberate Saved queue, the To try queue
-  for tools, repos, skills, and ideas (a link is optional; a note says why), Archive/restore (restore returns a
-  saved item to Saved), tags, saving links (article extraction with link-only fallback,
-  YouTube as one canonical video item), and following/refreshing RSS/Atom feeds.
+  (reading items not saved, unarchived), the deliberate Saved queue, To try (things:
+  tools, repos, skills, and ideas kept as a name, optional link, description, note,
+  and tags; never read as articles and never promoted from the Inbox),
+  Archive/restore (restore returns a saved item to Saved), tags, saving links
+  (article extraction with link-only fallback, YouTube as one canonical video item),
+  and following/refreshing RSS/Atom feeds.
   `services/refresher` refreshes all users' feeds every `SHELFMARK_REFRESH_MINUTES`.
 - **Persistence.** `models` (SQLAlchemy 2, portable types, named constraints, UTC
   timestamps), `repositories/library` (portable Core/ORM queries only), Alembic

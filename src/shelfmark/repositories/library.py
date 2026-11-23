@@ -10,7 +10,14 @@ from datetime import datetime
 from sqlalchemy import and_, delete, exists, func, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shelfmark.models import Feed, Item, Tag, User, feed_entries, item_tags
+from shelfmark.models import (
+    Feed,
+    Item,
+    Tag,
+    User,
+    feed_entries,
+    item_tags,
+)
 
 MAX_LIST = 500
 
@@ -93,9 +100,16 @@ class LibraryRepository:
             select(Item).where(Item.user_id == user_id, Item.id == item_id)
         )
 
-    async def item_by_url(self, user_id: int, url: str) -> Item | None:
+    async def item_by_url(
+        self, user_id: int, url: str, *, thing: bool = False
+    ) -> Item | None:
+        """The reading item with this URL, or with ``thing``, the thing to try."""
+        kind = Item.kind == "thing" if thing else Item.kind != "thing"
         return await self.session.scalar(
-            select(Item).where(Item.user_id == user_id, Item.url == url)
+            select(Item)
+            .where(Item.user_id == user_id, Item.url == url, kind)
+            .order_by(Item.id)
+            .limit(1)
         )
 
     async def add_item(self, item: Item) -> Item:
@@ -119,12 +133,12 @@ class LibraryRepository:
         not_archived = Item.archived_at.is_(None)
         if view == "inbox":
             query = query.where(
-                not_archived, Item.saved_at.is_(None), Item.try_at.is_(None)
+                not_archived, Item.saved_at.is_(None), Item.kind != "thing"
             )
         elif view == "saved":
             query = query.where(not_archived, Item.saved_at.is_not(None))
         elif view == "try":
-            query = query.where(not_archived, Item.try_at.is_not(None))
+            query = query.where(not_archived, Item.kind == "thing")
         elif view == "archive":
             query = query.where(Item.archived_at.is_not(None))
         elif view == "feed":
@@ -160,10 +174,10 @@ class LibraryRepository:
 
         return {
             "inbox": await count(
-                mine, live, Item.saved_at.is_(None), Item.try_at.is_(None)
+                mine, live, Item.saved_at.is_(None), Item.kind != "thing"
             ),
             "saved": await count(mine, live, Item.saved_at.is_not(None)),
-            "try": await count(mine, live, Item.try_at.is_not(None)),
+            "try": await count(mine, live, Item.kind == "thing"),
             "archive": await count(mine, Item.archived_at.is_not(None)),
         }
 

@@ -1,4 +1,4 @@
-"""Library business logic: saving links, following feeds, triage.
+"""Library business logic: saving links, things to try, feeds, triage.
 
 The service receives its collaborators (a repository, a fetcher, and a clock) from
 the caller, so tests use a real SQLite repository with a fake fetcher and clock.
@@ -15,7 +15,7 @@ import structlog
 from shelfmark.clients.fetcher import BlockedURLError, Fetcher, FetchError
 from shelfmark.models import Feed, Item
 from shelfmark.repositories.library import LibraryRepository
-from shelfmark.services.content import extract_article, plain_text
+from shelfmark.services.content import Article, extract_article, plain_text
 from shelfmark.services.feeds import FeedFormatError, parse_feed
 from shelfmark.services.urls import (
     WebURLError,
@@ -32,6 +32,7 @@ VIEWS = frozenset({"inbox", "saved", "try", "archive", "feed", "tag"})
 MAX_NOTE_CHARS = 2000
 MAX_TAGS = 20
 MAX_TAG_CHARS = 50
+MAX_DECK_CHARS = 300
 
 
 def utc_now() -> datetime:
@@ -110,21 +111,20 @@ class LibraryService:
         *,
         saved: bool | None = None,
         archived: bool | None = None,
-        trying: bool | None = None,
         tags: list[str] | None = None,
         note: str | None = None,
     ) -> Item:
         item = await self.item(user_id, item_id)
         now = self.clock()
-        # Adding to Saved or To try is a deliberate choice; it pulls an item out of
-        # Archive. Removing it leaves the archive state alone.
+        # Saving is a deliberate choice; it pulls an item out of Archive. Unsaving
+        # leaves the archive state alone.
         if saved is not None:
+            if saved and item.kind == "thing":
+                raise LibraryError(
+                    "Things to try stay in To try. Archive one once you have tried it."
+                )
             item.saved_at = (item.saved_at or now) if saved else None
             if saved:
-                item.archived_at = None
-        if trying is not None:
-            item.try_at = (item.try_at or now) if trying else None
-            if trying:
                 item.archived_at = None
         if note is not None:
             item.note = clean_note(note)
@@ -138,33 +138,16 @@ class LibraryService:
     # Saving links
 
     async def save_link(
-        self,
-        user_id: int,
-        raw_url: str,
-        title: str = "",
-        *,
-        note: str = "",
-        queue: str = "saved",
+        self, user_id: int, raw_url: str, title: str = "", *, note: str = ""
     ) -> SaveResult:
-        """Add a link (or, for ``queue="try"``, possibly just a name) to a queue."""
-        if queue not in ("saved", "try"):
-            raise LibraryError("Unknown queue.")
+        """Save an article or video link to Saved, extracting a reading copy."""
         title = plain_text(title, 400)
         note = clean_note(note)
-        if not raw_url.strip():
-            if queue != "try":
-                raise LibraryError("Enter a full HTTP or HTTPS URL.")
-            if not title:
-                raise LibraryError("Give it a name or a link.")
-            thing = Item(
-                url=None, kind="thing", title=title, source="", copy="none", body=[]
-            )
-            return await self._create(user_id, thing, queue, note)
         url = _parse(raw_url)
         key = canonical_item_url(url)
         existing = await self.repo.item_by_url(user_id, key)
         if existing is not None:
-            _enqueue(existing, queue, self.clock())
+            existing.saved_at = existing.saved_at or self.clock()
             existing.archived_at = None
             if title:
                 existing.title = title
@@ -186,19 +169,88 @@ class LibraryService:
             )
         else:
             item = await self._article(url, title)
-        return await self._create(user_id, item, queue, note)
+        item.saved_at = self.clock()
+        return await self._create(user_id, item, note, [])
+
+    async def add_thing(
+        self,
+        user_id: int,
+        name: str,
+        raw_url: str = "",
+        *,
+        description: str = "",
+        note: str = "",
+        tags: list[str] | None = None,
+    ) -> SaveResult:
+        """Add a tool, repo, skill, or idea to To try: a name and/or a link.
+
+        The link is kept as a link, never read as an article. Without a name, the
+        page's title and description fill in the name and description.
+        """
+        name = plain_text(name, 400)
+        description = plain_text(description, MAX_DECK_CHARS)
+        note = clean_note(note)
+        url = canonical_item_url(_parse(raw_url)) if raw_url.strip() else None
+        if not name and not url:
+            raise LibraryError("Give it a name or a link.")
+        if url:
+            existing = await self.repo.item_by_url(user_id, url, thing=True)
+            if existing is not None:
+                existing.archived_at = None
+                existing.title = name or existing.title
+                existing.deck = description or existing.deck
+                existing.note = note or existing.note
+                if tags:
+                    names = [t.name for t in existing.tags] + tags
+                    await self.repo.set_tags(existing, clean_tags(names))
+                await self.repo.commit()
+                return SaveResult(await self.repo.refresh_item(existing), created=False)
+        if url and not name:
+            page = await self._read_page(url)
+            name = github_repo_name(url) or (page.title if page else "")
+            name = name or site_name(url)
+            description = description or (page.deck if page else "")
+        thing = Item(
+            url=url,
+            kind="thing",
+            title=name,
+            source=site_name(url) if url else "",
+            deck=description[:MAX_DECK_CHARS],
+            copy="link" if url else "none",
+            body=[],
+        )
+        return await self._create(user_id, thing, note, clean_tags(tags or []))
 
     async def _create(
-        self, user_id: int, item: Item, queue: str, note: str
+        self, user_id: int, item: Item, note: str, tags: list[str]
     ) -> SaveResult:
         now = self.clock()
         item.user_id = user_id
         item.note = note
         item.published_at = item.created_at = now
-        _enqueue(item, queue, now)
         await self.repo.add_item(item)
+        if tags:
+            await self.repo.set_tags(item, tags)
         await self.repo.commit()
         return SaveResult(await self.repo.refresh_item(item), created=True)
+
+    async def _read_page(self, url: str) -> Article | None:
+        """Extract the article at ``url``; ``None`` when it cannot be read.
+
+        Raises ``LibraryError`` when the URL leads somewhere other than a public
+        website.
+        """
+        try:
+            page = await self.fetcher.fetch(url)
+        except BlockedURLError as error:
+            raise LibraryError(str(error)) from error
+        except FetchError as error:
+            # The link is still worth keeping when the publisher refuses extraction.
+            log.info("article_fetch_failed", url=url, reason=str(error))
+            return None
+        if "html" not in page.content_type and "<html" not in page.text[:2000].lower():
+            return None
+        return extract_article(page.text)
 
     async def _article(self, url: str, title: str) -> Item:
         item = Item(
@@ -211,17 +263,9 @@ class LibraryService:
             copy="link",
             body=[],
         )
-        try:
-            page = await self.fetcher.fetch(url)
-        except BlockedURLError as error:
-            raise LibraryError(str(error)) from error
-        except FetchError as error:
-            # The link is still worth saving when the publisher refuses extraction.
-            log.info("article_fetch_failed", url=url, reason=str(error))
+        article = await self._read_page(url)
+        if article is None:
             return item
-        if "html" not in page.content_type and "<html" not in page.text[:2000].lower():
-            return item
-        article = extract_article(page.text)
         if article.title and not title:
             item.title = github_repo_name(url) or article.title
         if article.blocks:
@@ -324,13 +368,6 @@ def github_repo_name(url: str) -> str | None:
     if parts.hostname in ("github.com", "www.github.com") and len(segments) == 2:
         return "/".join(segments)
     return None
-
-
-def _enqueue(item: Item, queue: str, now: datetime) -> None:
-    if queue == "try":
-        item.try_at = item.try_at or now
-    else:
-        item.saved_at = item.saved_at or now
 
 
 def _parse(raw_url: str) -> str:

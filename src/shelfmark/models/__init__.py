@@ -12,11 +12,13 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Index,
     MetaData,
     String,
     Table,
     TypeDecorator,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -114,18 +116,36 @@ class Tag(Base):
     name: Mapped[str] = mapped_column(String(50))
 
 
+# Reading items (articles, videos) are one per URL. Things to try live apart from
+# them, so a repo can be both a saved article and a thing to try.
+NOT_THING = text("kind <> 'thing'")
+
+
 class Item(Base):
-    """Something to read or watch: a feed entry or a deliberately saved link."""
+    """Something to read or watch (a feed entry or a saved link), or a thing to try.
+
+    Things to try (``kind="thing"``) are link aggregation, not reading: a name, an
+    optional link, a short description (``deck``), a note, and tags. They are never
+    fetched as articles and always sit in To try until archived (tried).
+    """
 
     __tablename__ = "items"
-    __table_args__ = (UniqueConstraint("user_id", "url"),)
+    __table_args__ = (
+        Index(
+            "uq_items_user_id_url",
+            "user_id",
+            "url",
+            unique=True,
+            sqlite_where=NOT_THING,
+            postgresql_where=NOT_THING,
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
-    # Null for a thing to try that has no link. NULLs never collide in the unique
-    # constraint on SQLite or Postgres.
+    # Null for a thing to try that has no link.
     url: Mapped[str | None] = mapped_column(String(2048))
     kind: Mapped[str] = mapped_column(String(16))  # article | video | thing
     title: Mapped[str] = mapped_column(String(400))
@@ -140,7 +160,6 @@ class Item(Base):
     published_at: Mapped[datetime] = mapped_column(Timestamp, index=True)
     created_at: Mapped[datetime] = mapped_column(Timestamp)
     saved_at: Mapped[datetime | None] = mapped_column(Timestamp)
-    try_at: Mapped[datetime | None] = mapped_column(Timestamp)
     archived_at: Mapped[datetime | None] = mapped_column(Timestamp)
 
     tags: Mapped[list[Tag]] = relationship(
@@ -149,4 +168,12 @@ class Item(Base):
     feeds: Mapped[list[Feed]] = relationship(secondary=feed_entries, lazy="selectin")
 
 
-__all__ = ["Base", "Feed", "Item", "Tag", "User", "feed_entries", "item_tags"]
+__all__ = [
+    "Base",
+    "Feed",
+    "Item",
+    "Tag",
+    "User",
+    "feed_entries",
+    "item_tags",
+]

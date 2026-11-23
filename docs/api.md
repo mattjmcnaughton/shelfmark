@@ -48,13 +48,16 @@ An **item summary**:
   "id": 7, "url": "https://example.com/post", "kind": "article",
   "title": "A post", "source": "Example", "author": "Ada", "deck": "Short excerpt",
   "video_id": null, "published_at": "2026-11-20T12:00:00Z",
-  "saved": false, "trying": false, "archived": false, "note": "",
+  "saved": false, "archived": false, "note": "",
   "tags": ["design"], "feed_ids": [1], "copy": "feed"
 }
 ```
 
-`kind` is `article`, `video`, or `thing`. A `thing` is something to try that has no
-link (just a name and a note), so its `url` is `null`. `video_id` is an
+`kind` is `article`, `video`, or `thing`. A `thing` is something to try (a tool,
+repo, skill, or idea): a name, an optional link (`url` is `null` without one), a short
+description in `deck`, a note, and tags. Things are link aggregation, not reading:
+their link is never extracted as an article, and they are separate from reading
+items, so the same URL can be both a saved article and a thing to try. `video_id` is an
 11-character YouTube ID for videos. `copy` says where the reading text came from:
 `feed` (feed entry content), `extracted` (clean article extraction), `link`
 (nothing readable; show the original-link fallback), or `none` (no link at all).
@@ -72,15 +75,14 @@ An **item detail** adds `body`, a list of plain-text blocks
 | GET | `/api/items?view=tag&tag=design` | | Items with the tag, archived included |
 | GET | `/api/items/{id}` | | detail |
 | POST | `/api/items` | `{"url": "…", "title": "optional", "note": "optional", "queue": "saved"}` | 201 detail; saves a link (article or YouTube) to Saved. A known URL is added to the queue and unarchived (200). |
-| POST | `/api/items` | `{"queue": "try", "title": "omnigent", "url": "optional", "note": "optional"}` | 201 detail; adds something to try. Needs a `url` or a `title`. With a link it is fetched and extracted like a saved link. |
-| PATCH | `/api/items/{id}` | any of `{"saved": bool, "trying": bool, "archived": bool, "tags": ["…"], "note": "…"}` | detail |
+| POST | `/api/items` | `{"queue": "try", "title": "omnigent", "url": "optional", "description": "optional", "note": "optional", "tags": ["optional"]}` | 201 detail; adds a thing to try. Needs a `url` or a `title`. Without a `title`, the page's title and description fill in the name and description. A link already in To try is returned (200), unarchived, with the new tags merged in. |
+| PATCH | `/api/items/{id}` | any of `{"saved": bool, "archived": bool, "tags": ["…"], "note": "…"}` | detail; `saved: true` on a thing is 400 |
 
-Queues: **Inbox** is feed triage: items that are not saved, not to try, and not
-archived. **Saved** is the deliberate reading queue. **To try** holds tools, repos,
-skills, and ideas to try out later. An item can be in Saved and To try at once.
-Adding an archived item to Saved or To try unarchives it. Archiving a to-try item
-means it was tried. Restoring (`archived: false`) returns an item to the queues it
-is in, or to Inbox if it is in none. Lists are newest first (`published_at`, then
+Queues: **Inbox** is feed triage: reading items that are not saved and not
+archived. **Saved** is the deliberate reading queue. **To try** holds the things to
+try; reading items are never moved into it. Saving an archived item unarchives it.
+Archiving a thing means it was tried. Restoring (`archived: false`) returns a thing
+to To try, a saved item to Saved, and anything else to the Inbox. Lists are newest first (`published_at`, then
 `id`), capped at 500. Notes are at most 2000 characters.
 
 ## Feeds

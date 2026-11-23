@@ -213,7 +213,11 @@ async def test_users_cannot_see_each_others_items(database):
     await session.close()
 
 
-async def test_to_try_queue_holds_named_things_and_promoted_feed_items(database):
+async def test_to_try_holds_things_apart_from_reading_items(database):
+    repo_url = "https://github.com/example/t3code"
+    repo_page = ARTICLE.replace(
+        "<head>", '<head><meta name="description" content="A coding agent UI.">'
+    )
     fetcher = FakeFetcher(
         {
             FEED: rss(
@@ -224,56 +228,81 @@ async def test_to_try_queue_holds_named_things_and_promoted_feed_items(database)
                     "Fri, 20 Nov 2026 09:00:00 GMT",
                     "<p>x</p>",
                 ),
-                (
-                    "Other",
-                    "https://blog.example.com/o",
-                    "Thu, 19 Nov 2026 09:00:00 GMT",
-                    "<p>y</p>",
-                ),
             ),
-            "https://github.com/example/t3code": ARTICLE,
+            repo_url: repo_page,
         }
     )
     svc, uid, session = await service(database, fetcher, FakeClock())
 
     # A thing with no link at all: just a name and why.
     thing = (
-        await svc.save_link(
-            uid, "", "omnigent", note="Try  on the\r\nshelfmark repo", queue="try"
-        )
+        await svc.add_thing(uid, "omnigent", note="Try  on the\r\nshelfmark repo")
     ).item
     assert (thing.url, thing.kind, thing.copy) == (None, "thing", "none")
     assert thing.note == "Try on the\nshelfmark repo"
-    # A second link-less thing must not collide on the (user_id, url) constraint.
-    await svc.save_link(uid, "", "a skill", queue="try")
+    # A second link-less thing must not collide on the (user_id, url) index.
+    await svc.add_thing(uid, "a skill")
     with pytest.raises(LibraryError, match="name or a link"):
-        await svc.save_link(uid, "  ", "", queue="try")
-    with pytest.raises(LibraryError):
-        await svc.save_link(uid, "", "no url", queue="saved")
+        await svc.add_thing(uid, " ", "  ")
 
-    # A repo link to try is fetched like an article but is not in Saved.
-    repo = (
-        await svc.save_link(uid, "https://github.com/example/t3code", queue="try")
+    # A named link with labels is kept as a link: nothing is fetched or extracted.
+    named = (
+        await svc.add_thing(
+            uid,
+            "T3 Code",
+            repo_url,
+            description="Theo's agent UI",
+            tags=["Agents", "agents", "UI"],
+        )
     ).item
-    assert repo.copy == "extracted" and repo.saved_at is None
-    assert repo.title == "example/t3code"
+    assert repo_url not in fetcher.fetched
+    assert (named.kind, named.copy, named.body, named.saved_at) == (
+        "thing",
+        "link",
+        [],
+        None,
+    )
+    assert (named.title, named.deck, named.source) == (
+        "T3 Code",
+        "Theo's agent UI",
+        "github.com",
+    )
+    assert [t.name for t in named.tags] == ["agents", "ui"]
 
-    # A feed item moved to To try leaves the Inbox.
+    # Adding the same link again returns the same thing and merges labels.
+    again = await svc.add_thing(uid, "", repo_url, tags=["later"])
+    assert not again.created and again.item.id == named.id
+    assert again.item.title == "T3 Code"
+    assert [t.name for t in again.item.tags] == ["agents", "later", "ui"]
+
+    # The same link can also be a saved article, separate from the thing.
+    article = (await svc.save_link(uid, repo_url)).item
+    assert article.id != named.id and article.kind == "article"
+    assert await titles(svc, uid, "saved") == ["example/t3code"]
+
+    # Without a name, the page fills in the name and description, but no body.
+    await svc.update(uid, named.id, archived=True)
+    other = "https://github.com/example/other"
+    fetcher.pages[other] = repo_page
+    unnamed = (await svc.add_thing(uid, "", other)).item
+    assert (unnamed.title, unnamed.deck) == ("example/other", "A coding agent UI.")
+    assert unnamed.body == [] and unnamed.copy == "link"
+
+    # Things to try cannot be saved, and feed items cannot be put in To try.
+    with pytest.raises(LibraryError, match="stay in To try"):
+        await svc.update(uid, thing.id, saved=True)
     await svc.follow(uid, FEED)
-    post = (await svc.items(uid, "inbox", None, None))[0]
-    await svc.update(uid, post.id, trying=True)
-    assert await titles(svc, uid, "inbox") == ["Other"]
+    assert await titles(svc, uid, "inbox") == ["Tool post"]
     assert set(await titles(svc, uid, "try")) == {
         "omnigent",
         "a skill",
-        repo.title,
-        "Tool post",
+        "example/other",
     }
     assert await svc.repo.counts(uid) == {
         "inbox": 1,
-        "saved": 0,
-        "try": 4,
-        "archive": 0,
+        "saved": 1,
+        "try": 3,
+        "archive": 1,
     }
 
     # Archiving marks it tried; restoring returns it to To try, not the Inbox.
@@ -282,11 +311,6 @@ async def test_to_try_queue_holds_named_things_and_promoted_feed_items(database)
     await svc.update(uid, thing.id, archived=False)
     assert "omnigent" in await titles(svc, uid, "try")
     assert "omnigent" not in await titles(svc, uid, "inbox")
-
-    # Adding to To try pulls an item out of Archive; removing it returns it to Inbox.
-    await svc.update(uid, post.id, archived=True)
-    await svc.update(uid, post.id, trying=True)
-    assert "Tool post" in await titles(svc, uid, "try")
-    await svc.update(uid, post.id, trying=False, note="")
-    assert "Tool post" in await titles(svc, uid, "inbox")
+    # Adding a tried thing's link again brings it back to To try.
+    assert (await svc.add_thing(uid, "", repo_url)).item.archived_at is None
     await session.close()

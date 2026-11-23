@@ -19,6 +19,7 @@ export type ItemSummary = {
   id: number;
   /** `null` for a thing to try that has no link. */
   url: string | null;
+  /** A `thing` is something to try: a name, link, description, note, and tags. */
   kind: "article" | "video" | "thing";
   title: string;
   source: string;
@@ -27,7 +28,6 @@ export type ItemSummary = {
   video_id: string | null;
   published_at: string | null;
   saved: boolean;
-  trying: boolean;
   archived: boolean;
   /** The user's own plain-text note, such as why something is worth trying. */
   note: string;
@@ -38,9 +38,7 @@ export type ItemSummary = {
 
 export type ItemDetail = ItemSummary & { body: { text: string; heading: boolean }[] };
 
-export type ItemPatch = Partial<
-  Pick<ItemSummary, "saved" | "trying" | "archived" | "tags" | "note">
->;
+export type ItemPatch = Partial<Pick<ItemSummary, "saved" | "archived" | "tags" | "note">>;
 
 export type View =
   | { kind: "inbox" }

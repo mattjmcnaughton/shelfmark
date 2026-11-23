@@ -8,15 +8,16 @@ triage, read, tag, and archive what matters without the noise.
 ## What it does
 
 - **Triage an Inbox.** Follow RSS and Atom feeds; new entries land in the Inbox, where
-  each one gets a glance and a decision: save it, set it aside to try, or archive it.
+  each one gets a glance and a decision: save it or archive it.
 - **Read in a Saved queue.** Links you save, and entries you keep, go to Saved. Articles
   are extracted to clean, plain text, and YouTube links play in place on demand.
-- **Keep a To try list.** Tools, repos, skills, and ideas, with or without a link, each
-  with a short note on why it is worth trying.
+- **Keep a To try list.** Tools, repos, skills, and ideas: a name, an optional link, a
+  short description, labels, and a note on why it is worth trying. It is a list of
+  links, not reading, so nothing in it is read as an article.
 - **Tag and archive.** A few tags for finding things again; archive when you are done,
   and restore anything later.
-- **Keyboard first.** `j`/`k` to move, `s` to save, `e` for To try, `t` to tag, `a` to
-  archive, `f` for a distraction-free focus view, and `?` for the full list.
+- **Keyboard first.** `j`/`k` to move, `s` to save, `i` to add something to try, `t` to
+  tag, `a` to archive, `f` for a distraction-free focus view, and `?` for the full list.
 - **Private.** One person's library behind its own sign-in, with an allowlist of who
   may use it.
 

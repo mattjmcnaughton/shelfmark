@@ -17,13 +17,14 @@ const json = (body: unknown, status = 200) =>
 
 /** An in-memory Shelfmark server implementing the parts of docs/api.md the desk uses. */
 function fakeServer(items: ItemSummary[]) {
+  const thing = (x: ItemSummary) => x.kind === "thing";
   const inView = (x: ItemSummary, view: string | null) =>
     view === "inbox"
-      ? !x.saved && !x.trying && !x.archived
+      ? !x.saved && !thing(x) && !x.archived
       : view === "saved"
         ? x.saved && !x.archived
         : view === "try"
-          ? x.trying && !x.archived
+          ? thing(x) && !x.archived
           : view === "archive" && x.archived;
   return async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input), "http://desk.test");
@@ -45,17 +46,18 @@ function fakeServer(items: ItemSummary[]) {
       });
     }
     if (url.pathname === "/api/items" && method === "POST") {
-      const { queue, url: link, title, note } = JSON.parse(String(init?.body));
+      const { queue, url: link, title, note, description, tags } = JSON.parse(String(init?.body));
       if (!link && !title) return json({ detail: "Give it a name or a link." }, 422);
       const added: ItemSummary = {
         ...article(Math.max(0, ...items.map((x) => x.id)) + 1, title ?? link),
         url: link ?? null,
-        kind: link ? "article" : "thing",
+        kind: queue === "try" ? "thing" : "article",
         source: "",
+        deck: description ?? null,
         copy: link ? "link" : "none",
         saved: queue === "saved",
-        trying: queue === "try",
         note: note ?? "",
+        tags: tags ?? [],
       };
       items.push(added);
       return json({ ...added, body: [] }, 201);
@@ -68,7 +70,7 @@ function fakeServer(items: ItemSummary[]) {
     if (!item) return json({ detail: "Not found." }, 404);
     if (method === "PATCH") {
       const changes = JSON.parse(String(init?.body));
-      const unarchive = changes.saved || changes.trying;
+      const unarchive = changes.saved;
       Object.assign(item, changes, unarchive ? { archived: false } : {});
     }
     const body = item.url ? [{ text: `Body of ${item.title}`, heading: false }] : [];
@@ -87,7 +89,6 @@ const article = (id: number, title: string): ItemSummary => ({
   video_id: null,
   published_at: `2026-11-${10 + id}T12:00:00Z`,
   saved: false,
-  trying: false,
   archived: false,
   note: "",
   tags: [],
@@ -133,7 +134,7 @@ test("pressing S moves the selected Inbox item to Saved", async () => {
   await waitFor(() => expect(rowTitles()).toEqual(["Newer post"]));
 });
 
-test("pressing I adds a named thing with a note to To try", async () => {
+test("pressing I adds a named thing with labels and a note to To try", async () => {
   renderDesk(fakeServer([article(1, "A post")]));
   await screen.findByText("Body of A post");
 
@@ -142,6 +143,12 @@ test("pressing I adds a named thing with a note to To try", async () => {
   fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "omnigent" } });
   fireEvent.change(within(dialog).getByLabelText("Why try it? (optional)"), {
     target: { value: "Agent harness\nthat looked promising" },
+  });
+  fireEvent.change(within(dialog).getByLabelText("Description (optional)"), {
+    target: { value: "An agent harness" },
+  });
+  fireEvent.change(within(dialog).getByLabelText("Labels (optional)"), {
+    target: { value: "Agents, , cli" },
   });
   fireEvent.click(within(dialog).getByRole("button", { name: "Add to To try" }));
 
@@ -152,6 +159,10 @@ test("pressing I adds a named thing with a note to To try", async () => {
   const note = screen.getByRole("region", { name: "Why try it" });
   expect(note.querySelector("p")?.textContent).toBe("Agent harness\nthat looked promising");
   expect(screen.queryByRole("link", { name: /Open original/ })).toBeNull();
+  expect(screen.getByText("An agent harness")).toBeTruthy();
+  expect(document.querySelector(".sheet .tags")?.textContent).toContain("Agents  /  cli");
+  // A thing to try cannot be saved as reading.
+  expect(screen.queryByRole("button", { name: "Save item" })).toBeNull();
 });
 
 test("an unauthenticated visitor is asked to sign in", async () => {

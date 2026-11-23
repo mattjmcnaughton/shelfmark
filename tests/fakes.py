@@ -11,8 +11,10 @@ class FakeFetcher:
     def __init__(self, pages: dict[str, str | FetchError] | None = None) -> None:
         self.pages: dict[str, str | FetchError] = dict(pages or {})
         self.content_types: dict[str, str] = {}
+        self.fetched: list[str] = []
 
     async def fetch(self, url: str) -> FetchedPage:
+        self.fetched.append(url)
         page = self.pages.get(url)
         if page is None:
             raise FetchError("Could not reach the site.")

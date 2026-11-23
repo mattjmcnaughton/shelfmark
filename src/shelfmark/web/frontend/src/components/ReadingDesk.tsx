@@ -55,7 +55,6 @@ const LIBRARY_VIEWS = [
 const SHORTCUTS = [
   ["J / K", "Next / previous item"],
   ["S", "Toggle saved"],
-  ["E", "Toggle To try"],
   ["T", "Edit tags"],
   ["A", "Archive / restore"],
   ["F", "Toggle focus view"],
@@ -66,11 +65,17 @@ const SHORTCUTS = [
 ];
 
 const kindLabel = (x: ItemSummary) =>
-  x.trying ? "To try" : x.kind === "video" ? "Video" : x.kind === "thing" ? "Thing" : "Article";
+  x.kind === "thing" ? "To try" : x.kind === "video" ? "Video" : "Article";
 
 /** Where restoring an archived item puts it (see docs/api.md). */
 const restoreLabel = (x: ItemSummary) =>
-  x.trying ? "Restore to To try" : x.saved ? "Restore to Saved" : "Return to Inbox";
+  x.kind === "thing" ? "Restore to To try" : x.saved ? "Restore to Saved" : "Return to Inbox";
+
+const splitTags = (value: string) =>
+  value
+    .split(",")
+    .map((tag) => tag.trim())
+    .filter(Boolean);
 
 const sameView = (a: View, b: View) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -173,21 +178,13 @@ export function ReadingDesk() {
     }
   }
   function save() {
-    if (!item) return;
+    // Things to try stay in To try; only reading items can be saved.
+    if (!item || item.kind === "thing") return;
     const target = item;
     run(async () => {
       await patch(target, { saved: !target.saved });
       await syncServerState();
       return target.saved ? "Removed from Saved" : "Added to Saved";
-    });
-  }
-  function toggleTry() {
-    if (!item) return;
-    const target = item;
-    run(async () => {
-      await patch(target, { trying: !target.trying });
-      await syncServerState();
-      return target.trying ? "Removed from To try" : "Added to To try";
     });
   }
   function archive() {
@@ -202,8 +199,9 @@ export function ReadingDesk() {
         focusRow(next?.id);
       }
       await syncServerState();
-      if (!target.archived) return target.trying ? "Marked tried" : "Moved to Archive";
-      if (target.trying) return "Restored to To try";
+      const thing = target.kind === "thing";
+      if (!target.archived) return thing ? "Marked tried" : "Moved to Archive";
+      if (thing) return "Restored to To try";
       return target.saved ? "Restored to Saved" : "Returned to Inbox";
     });
   }
@@ -246,6 +244,8 @@ export function ReadingDesk() {
     const name = String(data.get("name") ?? "").trim();
     const url = String(data.get("url") ?? "").trim();
     const note = String(data.get("note") ?? "").trim();
+    const description = String(data.get("description") ?? "").trim();
+    const labels = splitTags(String(data.get("tags") ?? ""));
     const kind = modal;
     const target = item;
     setFormError("");
@@ -262,8 +262,7 @@ export function ReadingDesk() {
       }
       if (kind === "Edit tags") {
         if (!target) return;
-        const next = name.split(",").map((tag) => tag.trim());
-        await patch(target, { tags: next.filter(Boolean) });
+        await patch(target, { tags: splitTags(name) });
         await syncServerState();
         return "Tags updated";
       }
@@ -279,6 +278,7 @@ export function ReadingDesk() {
         url: url || undefined,
         title: name || undefined,
         note: note || undefined,
+        ...(trying ? { description: description || undefined, tags: labels } : {}),
       });
       queryClient.setQueryData(keys.item(added.id), added);
       await syncServerState();
@@ -328,7 +328,6 @@ export function ReadingDesk() {
         j: () => move(1),
         k: () => move(-1),
         s: save,
-        e: toggleTry,
         a: archive,
         t: () => item && open("Edit tags"),
         f: () => item && zoom(),
@@ -486,7 +485,7 @@ export function ReadingDesk() {
                 </div>
                 <strong>{x.title}</strong>
                 <span className="kind">
-                  {x.trying || x.kind === "thing" ? (
+                  {x.kind === "thing" ? (
                     <FlaskConical />
                   ) : x.kind === "video" ? (
                     <Film />
@@ -534,26 +533,18 @@ export function ReadingDesk() {
           <div className="toolbar">
             {item && (
               <>
-                <button
-                  type="button"
-                  disabled={busy}
-                  title="Save (S)"
-                  aria-label="Save item"
-                  aria-pressed={item.saved}
-                  onClick={save}
-                >
-                  <Bookmark fill={item.saved ? "currentColor" : "none"} />
-                </button>
-                <button
-                  type="button"
-                  disabled={busy}
-                  title="To try (E)"
-                  aria-label="To try"
-                  aria-pressed={item.trying}
-                  onClick={toggleTry}
-                >
-                  <FlaskConical fill={item.trying ? "currentColor" : "none"} />
-                </button>
+                {item.kind !== "thing" && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    title="Save (S)"
+                    aria-label="Save item"
+                    aria-pressed={item.saved}
+                    onClick={save}
+                  >
+                    <Bookmark fill={item.saved ? "currentColor" : "none"} />
+                  </button>
+                )}
                 <button
                   type="button"
                   disabled={busy}
@@ -569,12 +560,16 @@ export function ReadingDesk() {
                   title={
                     item.archived
                       ? `${restoreLabel(item)} (A)`
-                      : item.trying
+                      : item.kind === "thing"
                         ? "Mark tried (A)"
                         : "Archive (A)"
                   }
                   aria-label={
-                    item.archived ? restoreLabel(item) : item.trying ? "Mark tried" : "Archive item"
+                    item.archived
+                      ? restoreLabel(item)
+                      : item.kind === "thing"
+                        ? "Mark tried"
+                        : "Archive item"
                   }
                   onClick={archive}
                 >
@@ -688,7 +683,7 @@ export function ReadingDesk() {
                 ) : modal === "Edit note" ? (
                   <>
                     <p>
-                      {item?.trying
+                      {item?.kind === "thing"
                         ? "Why is this worth trying? Plain text, up to 2000 characters."
                         : "A private note for this item. Plain text, up to 2000 characters."}
                     </p>
@@ -705,20 +700,28 @@ export function ReadingDesk() {
                 ) : modal === "Add something to try" ? (
                   <>
                     <p>
-                      Note a tool, repo, skill, or idea to try later. With a link, Shelfmark will
-                      also fetch a readable copy.
+                      Note a tool, repo, skill, or idea to try later. It stays a link with your
+                      notes; it is not saved as an article.
                     </p>
                     <label>
                       Name
-                      <input name="name" autoComplete="off" placeholder="t3code" />
+                      <input name="name" autoComplete="off" placeholder="T3 Code" />
                     </label>
                     <label>
                       Link (optional)
                       <input name="url" placeholder="https://…" />
                     </label>
                     <label>
+                      Description (optional)
+                      <input name="description" autoComplete="off" maxLength={300} />
+                    </label>
+                    <label>
+                      Labels (optional)
+                      <input name="tags" autoComplete="off" placeholder="agents, cli" />
+                    </label>
+                    <label>
                       Why try it? (optional)
-                      <textarea name="note" rows={4} maxLength={NOTE_MAX} />
+                      <textarea name="note" rows={3} maxLength={NOTE_MAX} />
                     </label>
                   </>
                 ) : (
@@ -730,7 +733,7 @@ export function ReadingDesk() {
                     </p>
                     <label>
                       {modal === "Save a link" ? "Link URL" : "RSS feed URL"}
-                      <input required name="url" placeholder="https://…" />
+                      <input required name="url" autoComplete="off" placeholder="https://…" />
                     </label>
                     <label>
                       {modal === "Save a link" ? "Title" : "Subscription name"} (optional)

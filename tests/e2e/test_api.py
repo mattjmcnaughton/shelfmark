@@ -86,11 +86,21 @@ async def test_reading_workflow(client):
     assert [i["id"] for i in tagged["items"]] == [saved_id]
 
     r = await client.post(
-        "/api/items", json={"queue": "try", "title": "omnigent", "note": "why: agents"}
+        "/api/items",
+        json={
+            "queue": "try",
+            "title": "omnigent",
+            "description": "Agent harness",
+            "note": "why: agents",
+            "tags": ["Agents"],
+        },
     )
     assert r.status_code == 201, r.text
     thing = r.json()
-    assert thing["url"] is None and thing["kind"] == "thing" and thing["trying"]
+    assert thing["url"] is None and thing["kind"] == "thing"
+    assert thing["deck"] == "Agent harness" and thing["tags"] == ["agents"]
+    r = await client.patch(f"/api/items/{thing['id']}", json={"saved": True})
+    assert r.status_code == 400
     r = await client.patch(f"/api/items/{thing['id']}", json={"note": "edited"})
     assert r.json()["note"] == "edited"
     tries = (await client.get("/api/items?view=try")).json()["items"]

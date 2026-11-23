@@ -61,7 +61,6 @@ class ItemSummary(BaseModel):
     video_id: str | None
     published_at: datetime
     saved: bool
-    trying: bool
     archived: bool
     note: str
     tags: list[str]
@@ -81,7 +80,6 @@ class ItemSummary(BaseModel):
             "video_id": item.video_id,
             "published_at": item.published_at,
             "saved": item.saved_at is not None,
-            "trying": item.try_at is not None,
             "archived": item.archived_at is not None,
             "note": item.note,
             "tags": [t.name for t in item.tags],
@@ -122,15 +120,19 @@ class LinkIn(BaseModel):
 
 
 class SaveIn(BaseModel):
+    """A link to save (``queue="saved"``) or a thing to try (``queue="try"``)."""
+
     url: str = Field("", max_length=2048)
     title: str = Field("", max_length=400)
     note: str = Field("", max_length=2000)
     queue: Literal["saved", "try"] = "saved"
+    # Things to try only.
+    description: str = Field("", max_length=300)
+    tags: list[str] = Field(default_factory=list, max_length=50)
 
 
 class ItemPatch(BaseModel):
     saved: bool | None = None
-    trying: bool | None = None
     archived: bool | None = None
     tags: list[str] | None = Field(None, max_length=50)
     note: str | None = Field(None, max_length=2000)

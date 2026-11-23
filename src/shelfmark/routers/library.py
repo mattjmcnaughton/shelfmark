@@ -127,9 +127,19 @@ async def item(ctx: Ctx, item_id: int) -> ItemDetail:
 
 @router.post("/items", response_model_by_alias=True)
 async def save_link(ctx: Ctx, body: SaveIn, response: Response) -> ItemDetail:
-    result = await ctx.service.save_link(
-        ctx.user.id, body.url, body.title, note=body.note, queue=body.queue
-    )
+    if body.queue == "try":
+        result = await ctx.service.add_thing(
+            ctx.user.id,
+            body.title,
+            body.url,
+            description=body.description,
+            note=body.note,
+            tags=body.tags,
+        )
+    else:
+        result = await ctx.service.save_link(
+            ctx.user.id, body.url, body.title, note=body.note
+        )
     response.status_code = 201 if result.created else 200
     return ItemDetail.of(result.item)
 
@@ -140,7 +150,6 @@ async def update_item(ctx: Ctx, item_id: int, body: ItemPatch) -> ItemDetail:
         ctx.user.id,
         item_id,
         saved=body.saved,
-        trying=body.trying,
         archived=body.archived,
         tags=body.tags,
         note=body.note,
