@@ -411,6 +411,51 @@ async def test_summary_only_feed_entries_fetch_the_full_article(database):
     await session.close()
 
 
+CHANNEL_ID = "UCBJycsmduvYEL83R_U4JriQ"
+CHANNEL_FEED = f"https://www.youtube.com/feeds/videos.xml?channel_id={CHANNEL_ID}"
+CHANNEL_PAGE = (
+    "<!doctype html><html><head><title>Channel</title>"
+    '<link rel="alternate" type="application/rss+xml" title="RSS" '
+    f'href="{CHANNEL_FEED}"></head><body>{"x" * 1000}</body></html>'
+)
+VIDEOS = (
+    '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom">'
+    "<title>Marques Brownlee</title><entry><title>A video</title>"
+    '<link rel="alternate" href="https://www.youtube.com/watch?v=KTDJiVpSDTI"/>'
+    "<published>2026-11-17T18:39:57+00:00</published></entry></feed>"
+)
+
+
+async def test_youtube_channels_follow_by_handle_or_url(database):
+    fetcher = FakeFetcher(
+        {"https://www.youtube.com/@mkbhd": CHANNEL_PAGE, CHANNEL_FEED: VIDEOS}
+    )
+    svc, uid, session = await service(database, fetcher, FakeClock())
+
+    feed = await svc.follow(uid, "@mkbhd")
+    assert (feed.url, feed.title) == (CHANNEL_FEED, "Marques Brownlee")
+    [video] = await svc.items(uid, "inbox", None, None)
+    assert (video.kind, video.video_id) == ("video", "KTDJiVpSDTI")
+    # The channel URL and its handle page are the same channel.
+    with pytest.raises(ConflictError):
+        await svc.follow(uid, f"https://www.youtube.com/channel/{CHANNEL_ID}")
+    with pytest.raises(ConflictError):
+        await svc.follow(uid, "https://youtube.com/@mkbhd")
+
+    # A channel URL needs no page fetch; a missing handle says so.
+    other = "UC" + "a" * 22
+    other_feed = f"https://www.youtube.com/feeds/videos.xml?channel_id={other}"
+    fetcher.pages[other_feed] = VIDEOS.replace("Marques Brownlee", "Other")
+    fetched = len(fetcher.fetched)
+    second = await svc.follow(uid, f"https://m.youtube.com/channel/{other}/videos")
+    assert second.url == other_feed and fetcher.fetched[fetched:] == [other_feed]
+    with pytest.raises(LibraryError, match="find that YouTube channel"):
+        await svc.follow(uid, "@nobody-here")
+    with pytest.raises(LibraryError, match="YouTube @handle"):
+        await svc.follow(uid, "mkbhd")
+    await session.close()
+
+
 async def test_following_a_site_page_finds_its_feed(database):
     home = (
         '<!doctype html><html><head><link rel="alternate" '

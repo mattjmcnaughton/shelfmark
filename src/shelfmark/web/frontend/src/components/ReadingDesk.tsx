@@ -773,11 +773,18 @@ export function ReadingDesk() {
                     <p>
                       {modal === "Save a link"
                         ? "Save an article or YouTube link. Shelfmark will try to extract a clean copy of the article."
-                        : `Paste an RSS or Atom feed URL or a site's address. Shelfmark imports its latest ${backfill ?? 3} ${backfill === 1 ? "post" : "posts"} (change this in Settings).`}
+                        : `Paste an RSS or Atom feed, a site's address, or a YouTube channel URL or @handle. Shelfmark imports its latest ${backfill ?? 3} ${backfill === 1 ? "post" : "posts"} (change this in Settings).`}
                     </p>
                     <label>
-                      {modal === "Save a link" ? "Link URL" : "Feed or site URL"}
-                      <input required name="url" autoComplete="off" placeholder="https://…" />
+                      {modal === "Save a link" ? "Link URL" : "Feed, site, or YouTube channel"}
+                      <input
+                        required
+                        name="url"
+                        autoComplete="off"
+                        placeholder={
+                          modal === "Save a link" ? "https://…" : "https://… or @channel"
+                        }
+                      />
                     </label>
                     <label>
                       {modal === "Save a link" ? "Title" : "Subscription name"} (optional)

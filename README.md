@@ -8,8 +8,8 @@ triage, read, tag, and archive what matters without the noise.
 ## What it does
 
 - **Triage an Inbox.** Follow RSS and Atom feeds; new entries land in the Inbox, where
-  each one gets a glance and a decision: save it or archive it. Follow a site or a feed;
-  only the latest few posts come in at first.
+  each one gets a glance and a decision: save it or archive it. Follow a site, a feed,
+  or a YouTube channel (URL or `@handle`); only the latest few posts come in at first.
 - **Read in a Saved queue.** Links you save, and entries you keep, go to Saved. Articles
   are extracted to clean, plain text, and YouTube links play in place on demand.
 - **Keep a To try list.** Tools, repos, skills, and ideas: a name, an optional link, a

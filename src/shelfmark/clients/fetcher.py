@@ -46,7 +46,10 @@ class FetchedPage:
 
 
 class Fetcher(Protocol):
-    async def fetch(self, url: str) -> FetchedPage: ...
+    async def fetch(self, url: str, *, truncate: bool = False) -> FetchedPage:
+        """Fetch ``url``. With ``truncate``, a response over the size cap is cut at
+        the cap instead of failing (enough to read a large page's ``<head>``)."""
+        ...
 
 
 def is_public_address(address: str) -> bool:
@@ -97,15 +100,15 @@ class PublicWebFetcher:
         self._max_bytes = max_bytes
         self._timeout = timeout_seconds
 
-    async def fetch(self, url: str) -> FetchedPage:
+    async def fetch(self, url: str, *, truncate: bool = False) -> FetchedPage:
         try:
-            return await asyncio.wait_for(self._follow(url), self._timeout)
+            return await asyncio.wait_for(self._follow(url, truncate), self._timeout)
         except TimeoutError as error:
             raise FetchError("The site took too long to respond.") from error
 
-    async def _follow(self, url: str) -> FetchedPage:
+    async def _follow(self, url: str, truncate: bool) -> FetchedPage:
         for _ in range(MAX_REDIRECTS + 1):
-            result = await self._fetch_once(url)
+            result = await self._fetch_once(url, truncate)
             if isinstance(result, FetchedPage):
                 return result
             try:
@@ -114,7 +117,7 @@ class PublicWebFetcher:
                 raise BlockedURLError from error
         raise FetchError("The site redirected too many times.")
 
-    async def _fetch_once(self, url: str) -> FetchedPage | str:
+    async def _fetch_once(self, url: str, truncate: bool) -> FetchedPage | str:
         host = URL(url).raw_host or ""
         check_public_hostname(host)
         results = await _resolve(host)
@@ -141,7 +144,10 @@ class PublicWebFetcher:
                 async for chunk in response.content.iter_chunked(64 * 1024):
                     body.extend(chunk)
                     if len(body) > self._max_bytes:
-                        raise FetchError("The response is larger than 2 MB.")
+                        if not truncate:
+                            raise FetchError("The response is larger than 2 MB.")
+                        del body[self._max_bytes :]
+                        break
                 charset = response.charset or "utf-8"
                 try:
                     text = body.decode(charset, errors="replace")

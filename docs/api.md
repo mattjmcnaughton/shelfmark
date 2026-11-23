@@ -93,8 +93,9 @@ to To try, a saved item to Saved, and anything else to the Inbox. Lists are newe
 | POST | `/api/feeds` | `{"url": "…", "title": "optional"}` | 201 feed; imports the latest `feed_backfill` entries. 409 when already followed. |
 | POST | `/api/feeds/refresh` | `{}` | `{"feeds": [feed…]}`; per-feed failures are in each feed's `error`. |
 
-`url` may be an RSS or Atom feed, or a web page that advertises one with
-`<link rel="alternate">`. Following imports only the newest
+`url` may be an RSS or Atom feed, a web page that advertises one with
+`<link rel="alternate">`, a YouTube channel URL (`/channel/UC…`, `/@handle`,
+`/c/…`, `/user/…`), or a bare YouTube `@handle`. Following imports only the newest
 `feed_backfill` entries; the older entries the feed lists at that moment are
 remembered and never imported, while every later entry is. A feed entry that has
 only a short summary gets its full article fetched and extracted; if that fails,

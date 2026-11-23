@@ -33,8 +33,10 @@ from shelfmark.services.feeds import (
 from shelfmark.services.urls import (
     WebURLError,
     canonical_item_url,
+    is_youtube_page,
     parse_web_url,
     site_name,
+    subscription_url,
     youtube_video_id,
 )
 
@@ -322,21 +324,39 @@ class LibraryService:
     # Feeds
 
     async def follow(self, user_id: int, raw_url: str, title: str = "") -> Feed:
-        """Follow a feed, or a web page that links to one.
+        """Follow a feed, a page that links to one, or a YouTube channel or @handle.
 
         Only the latest posts (the user's ``feed_backfill`` setting) are imported;
         the rest of what the feed lists now is remembered and never imported.
         """
-        url = _parse(raw_url)
+        try:
+            url = subscription_url(raw_url)
+        except WebURLError as error:
+            raise LibraryError(
+                "Enter a full HTTP or HTTPS URL, or a YouTube @handle."
+            ) from error
         await self._check_not_following(user_id, url)
         parsed: ParsedFeed | None = None
-        page = await self._fetch(url)
-        try:
-            parsed = parse_feed(page.text, page.url)
-        except FeedFormatError as error:
+        if not is_youtube_page(url):
+            page = await self._fetch(url)
+            try:
+                parsed = parse_feed(page.text, page.url)
+            except FeedFormatError as error:
+                found = discover_feed_url(page.text, page.url)
+                if not found:
+                    raise LibraryError(str(error)) from error
+                url = found
+        else:
+            # Channel pages are larger than the size cap; the feed link is in <head>.
+            try:
+                page = await self.fetcher.fetch(url, truncate=True)
+            except BlockedURLError as error:
+                raise LibraryError(str(error)) from error
+            except FetchError as error:
+                raise LibraryError("Could not find that YouTube channel.") from error
             found = discover_feed_url(page.text, page.url)
             if not found:
-                raise LibraryError(str(error)) from error
+                raise LibraryError("Could not find that YouTube channel's feed.")
             url = found
         if parsed is None:
             await self._check_not_following(user_id, url)

@@ -5,6 +5,9 @@ from urllib.parse import parse_qs, urlsplit, urlunsplit
 
 MAX_URL_LENGTH = 2048
 _VIDEO_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
+_CHANNEL_ID = re.compile(r"^UC[A-Za-z0-9_-]{22}$")
+# YouTube handles: 3 to 30 letters, digits, underscores, hyphens, and periods.
+_HANDLE = re.compile(r"^@[A-Za-z0-9._-]{3,30}$")
 
 
 class WebURLError(ValueError):
@@ -54,6 +57,41 @@ def youtube_video_id(url: str) -> str | None:
         elif len(segments) > 2 and segments[1] in ("shorts", "live", "embed"):
             candidate = segments[2]
     return candidate if candidate and _VIDEO_ID.match(candidate) else None
+
+
+def _youtube_host(url: str) -> bool:
+    host = (urlsplit(url).hostname or "").removeprefix("www.").removeprefix("m.")
+    return host == "youtube.com"
+
+
+def subscription_url(value: str) -> str:
+    """What to fetch to follow ``value``: a feed or page URL, or a YouTube @handle.
+
+    A YouTube channel ID URL maps straight to the channel's feed. Other channel
+    pages (``/@handle``, ``/c/name``, ``/user/name``) advertise their feed, which
+    the caller discovers from the page.
+    """
+    value = value.strip()
+    if _HANDLE.match(value):
+        return f"https://www.youtube.com/{value}"
+    url = parse_web_url(value)
+    parts = urlsplit(url)
+    if not _youtube_host(url):
+        return url
+    url = urlunsplit(("https", "www.youtube.com", parts.path, parts.query, ""))
+    segments = parts.path.split("/")
+    if (
+        len(segments) > 2
+        and segments[1] == "channel"
+        and _CHANNEL_ID.match(segments[2])
+    ):
+        return f"https://www.youtube.com/feeds/videos.xml?channel_id={segments[2]}"
+    return url
+
+
+def is_youtube_page(url: str) -> bool:
+    """A YouTube web page rather than one of its feeds."""
+    return _youtube_host(url) and not urlsplit(url).path.startswith("/feeds/")
 
 
 def canonical_item_url(url: str) -> str:
